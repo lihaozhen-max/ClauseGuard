@@ -11,7 +11,7 @@ Copy-Item .env.example .env.local      # 填 VITE_INTERNAL_API_KEY
 npm run dev                            # http://127.0.0.1:5173
 ```
 
-前置：工具服务已在 `127.0.0.1:8000` 运行（`backend/README` / 项目根 README §6）。
+前置：工具服务已在 `127.0.0.1:8000` 运行（`backend/README.md` / 项目根 README §6）。
 
 | 命令 | 作用 |
 |---|---|
