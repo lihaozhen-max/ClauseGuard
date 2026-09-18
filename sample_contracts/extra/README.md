@@ -20,36 +20,63 @@
 
 ## 怎么测
 
-### 一条命令（推荐）
+### 最简单：这四份已经有自己的待办单子了
+
+`mock-approval-system/seed.py` 里已为它们建了四张审批单，**一份合同一张单子、结果互不覆盖**：
+
+| 待办 | 对应合同 |
+|---|---|
+| **AP-006** | T-01 设备租赁合同（`high`，命中 7 条） |
+| **AP-007** | T-02 技术服务合同（`low`，0 命中） |
+| **AP-008** | T-03 数据处理服务协议（`medium`，命中 R009） |
+| **AP-009** | T-04 框架采购协议（`high`，命中 R006/R007） |
+
+所以直接在界面上操作就行（不用命令行）：
+
+1. 打开 <http://127.0.0.1:5173/tasks>，点 **「拉取待办（IF-10）」** → 列表里有 9 条
+2. 找到 **AP-006**，点「详情」→ 页签「**解析结果**」→ 点「**触发解析（IF-14）**」
+3. 切到「**规则命中**」→ 点「**触发审查（IF-16）**」→ 就是 T-01 的审查结果
+4. 想看别的就换 AP-007 / AP-008 / AP-009，各自独立、互不覆盖
+
+### 想测**你自己的**合同：用一键工具
 
 ```powershell
-cd ClauseGuard
-uv run --project backend python scripts/try_contract.py sample_contracts/extra/T-01_设备租赁合同.pdf
+uv run --project "C:\Users\13273\Desktop\项目实战2\ClauseGuard\backend" python "C:\Users\13273\Desktop\项目实战2\ClauseGuard\scripts\try_contract.py" "<你的合同路径>"
 ```
 
-它会：借一个审批单的槽位（默认 AP-004，它的附件本来就缺，最无损）→ 备份原文件 →
+> 上面是**单行、绝对路径**版本，在哪个目录下粘都能跑。
+> 也可以先 `cd C:\Users\13273\Desktop\项目实战2\ClauseGuard`，再用
+> `uv run --project backend python scripts/try_contract.py <合同路径>`。
+
+它会：借一个审批单的槽位（默认 AP-004，它的附件本来就故意缺失，最无损）→ 备份原文件 →
 重置该任务的附件/解析/审查痕迹 → 跑 `解析 → 审查` → 打印整体风险、逐条规则判定、证据原文与位置 →
 **自动还原槽位**。测完打开它给的链接就能在界面上看完整结果。
 
+**支持的格式**：PDF（文本型）、Word（`.docx`）、扫描件（`.png` / `.jpg`，会走 OCR，单页约 60–150 秒）。
+
 ```powershell
-# 换槽位（AP-001…AP-005 都行）
+# 换槽位（AP-001…AP-005 任选；借哪张，结果就落在哪张）
 uv run --project backend python scripts/try_contract.py <你的合同.pdf> --instance AP-002
 
 # 连续多次解析同一份合同（看判定是否稳定，尤其 LLM 相关规则）
 uv run --project backend python scripts/try_contract.py <你的合同.pdf> --keep-slot
 ```
 
-**支持的格式**：PDF（文本型）、Word（`.docx`）、扫描件（`.png` / `.jpg`，会走 OCR，单页约 60–150 秒）。
+> ⚠️ 借槽位有个必然的副作用：**同一张单子同一时间只能留一份结果**（每跑一次会重置它）。
+> 所以要同时看多份合同，用 AP-006…AP-009 那四张单子（各自独立）。
 
-### 不用脚本也行
+### 完全不用脚本也行
 
 ```powershell
 # 1) 把你的合同复制成 AP-004 声明的文件名（它的附件本来是故意缺失的）
 Copy-Item 你的合同.pdf sample_contracts\AP-004_办公用品采购合同.pdf
-# 2) 到界面上点 AP-004 的「触发解析」，再看「规则命中」
+# 2) 到界面上点 AP-004 的「详情」→「解析结果」→「触发解析」，再看「规则命中」
 # 3) 测完删掉，恢复 AC16 基线
 Remove-Item sample_contracts\AP-004_办公用品采购合同.pdf
 ```
+
+> 注意：**任务一旦下载过附件，界面上换不了文件**（附件已落到 `storage/`，界面没有"重新上传"）。
+> 想换一份，要么删掉该任务的痕迹（`try_contract.py` 会自动做），要么用另一张单子。
 
 ## 怎么改成你自己的合同
 

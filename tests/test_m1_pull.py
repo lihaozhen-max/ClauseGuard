@@ -89,14 +89,12 @@ def test_pull_returns_pending_approvals_with_required_fields(
 
     result = db_runner(scenario)
 
-    assert len(result.items) == 5
-    assert result.created_count + result.updated_count == 5
-    assert {item.instance_id for item in result.items} == {
-        "AP-001",
-        "AP-002",
-        "AP-003",
-        "AP-004",
-        "AP-005",
+    # 数量不写死：seed.py 里现在有 9 张单子（AP-001…AP-009），且以后可能再加。
+    # 这里断言的是"IF-01 要求的字段与去重语义"，不是"恰好 5 条"。
+    assert len(result.items) >= 5
+    assert result.created_count + result.updated_count == len(result.items)
+    assert {"AP-001", "AP-002", "AP-003", "AP-004", "AP-005"} <= {
+        item.instance_id for item in result.items
     }
     first = result.items[0]
     # FR-APP-01 要求的字段 + IF-01 的任务字段与去重标记

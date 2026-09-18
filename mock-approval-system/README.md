@@ -30,6 +30,14 @@ SD-02：全部为**自造文本**，禁止真实企业合同数据。
 | AP-003 | 采购合同（扫描件） | `AP-003_扫描件.png` | 走 OCR，命中 ≥2 条 |
 | AP-004 | 采购合同 | **文件故意缺失** | `blocked` / `CONTRACT_ATTACHMENT_MISSING`（AC16） |
 | AP-005 | 框架协议 | `AP-005_空文件.pdf`（0 字节） | `blocked` / `EMPTY_CONTRACT_CONTENT` |
+| **AP-006** | 租赁合同 | `extra/T-01_设备租赁合同.pdf` | 自查样例：命中 7 条，整体 `high` |
+| **AP-007** | 服务合同 | `extra/T-02_技术服务合同.pdf` | 自查样例：**0 命中**，整体 `low` |
+| **AP-008** | 服务合同 | `extra/T-03_数据处理服务协议.docx` | 自查样例：**唯一的 Word 样例**，命中 R009，整体 `medium` |
+| **AP-009** | 框架协议 | `extra/T-04_框架采购协议.pdf` | 自查样例：命中 R006/R007，整体 `high` |
+
+> AP-006…AP-009 是**自查样例**（T-01…T-04，源文件在 `sample_contracts/extra/`），
+> 目的是"一份合同一张单子"，这样审查结果互不覆盖、能在界面上逐份点着看。
+> 附件名带子目录，下载时会被 `sanitize_filename` 消毒成纯文件名。
 
 ## 运行
 
@@ -45,8 +53,11 @@ uv run --project backend uvicorn --app-dir mock-approval-system main:app --host 
 
 ```powershell
 curl http://127.0.0.1:8100/health
-# {"status":"ok","approvals":5,"comments":0,"contracts_dir":"…","missing_attachment_files":["AP-004_办公用品采购合同.pdf"]}
+# {"status":"ok","approvals":9,"comments":0,"contracts_dir":"…","missing_attachment_files":["AP-004_办公用品采购合同.pdf"]}
 ```
+
+> `approvals` 的数量以 `seed.py` 的 `APPROVALS` 为准（改完**必须重启本服务**才生效，
+> 它是模块级常量）；测试断言也按 `len(APPROVALS)` 动态取，不写死。
 
 ## 已知限制
 

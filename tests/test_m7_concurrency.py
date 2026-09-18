@@ -375,7 +375,9 @@ def test_concurrent_pull_stays_single_task_per_instance(
     results = gather(db_runner, one)
     errors = fatal(results)
     assert not errors, f"并发拉取出现异常：{describe(errors)}"
-    assert all(item == 5 for item in results), f"每路都应看到 5 条待办，实际 {results}"
+    # 不写死条数（seed.py 现在有 9 张单子，以后可能再加）：断言的是"6 路并发看到的完全一致"
+    assert len(set(results)) == 1, f"并发各路看到的待办数不一致：{results}"
+    assert results[0] >= 5, f"至少应看到 5 条内置样例，实际 {results[0]}"
 
     async def duplicates() -> list[tuple[str, int]]:
         async with session_scope() as session:

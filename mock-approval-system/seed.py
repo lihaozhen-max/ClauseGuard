@@ -180,6 +180,148 @@ APPROVALS: list[dict[str, Any]] = [
             "（或 PARSE_FAILED）",
         },
     },
+    # ── 自查样例 T-01…T-04（附件在 sample_contracts/extra/）──────────────────
+    # 这四张单子是为了"能拿自己的合同测"而加的：**一份合同一张单子**，审查结果互不覆盖，
+    # 不用再借 AP-004 的槽位。附件名带子目录，下载时会被 sanitize_filename 消毒成纯文件名。
+    {
+        "instance_id": "AP-006",
+        "approval_code": "CG-2026-0006",
+        "approval_title": "设备租赁合同审批（自查 T-01）",
+        "applicant_name": "周八",
+        "apply_time": "2026-09-15T01:20:00Z",
+        "current_status": "pending",
+        "contract_type": "租赁合同",
+        "form_data": {
+            "amount": "240000",
+            "currency": "CNY",
+            "supplier": "某某设备租赁有限公司",
+            "department": "信息技术部",
+            "lease_term": "12个月",
+        },
+        "attachments": [
+            {
+                "attachment_id": "ATT-006",
+                "file_name": "extra/T-01_设备租赁合同.pdf",
+                "file_type": "pdf",
+                "file_size": 0,  # 运行时按磁盘实际大小回填
+            }
+        ],
+        "expected": {
+            "parse_mode": "text",
+            "overall_risk_level": "high",
+            "expected_hits": ["R001", "R002", "R003", "R005", "R008", "R010", "R011"],
+            "expected_not_hit": ["R006", "R007", "R009"],
+            "llm_dependent": ["R004"],
+            "note": "故意写差的合同：预付款50%(R001)、尾款120天(R002)、期满自动续约(R003)、"
+            "乙方所在地管辖(R005)、缺保密(R008)、缺知识产权(R010)、验收无标准(R011)；"
+            "主体与金额齐全故 R006/R007 miss；不涉数据处理故 R009 miss；"
+            "R004 由 LLM 判定违约责任是否对等（关闭 LLM 时为 uncertain）",
+        },
+    },
+    {
+        "instance_id": "AP-007",
+        "approval_code": "CG-2026-0007",
+        "approval_title": "技术服务合同审批（自查 T-02）",
+        "applicant_name": "吴九",
+        "apply_time": "2026-09-16T02:40:00Z",
+        "current_status": "pending",
+        "contract_type": "服务合同",
+        "form_data": {
+            "amount": "360000",
+            "currency": "CNY",
+            "supplier": "某某软件技术有限公司",
+            "department": "数字化中心",
+            "service_period": "12个月",
+        },
+        "attachments": [
+            {
+                "attachment_id": "ATT-007",
+                "file_name": "extra/T-02_技术服务合同.pdf",
+                "file_type": "pdf",
+                "file_size": 0,
+            }
+        ],
+        "expected": {
+            "parse_mode": "text",
+            "overall_risk_level": "low",
+            "expected_hits": [],
+            "expected_not_hit": [
+                "R001", "R002", "R003", "R004", "R005", "R006",
+                "R007", "R008", "R009", "R010", "R011",
+            ],
+            "llm_dependent": ["R004"],
+            "note": "条款齐备的对照组：预付款20%(≤30%故 R001 miss)、尾款30天、无自动续约、"
+            "违约责任对等、向甲方所在地起诉、有保密与知识产权条款、"
+            "验收三要素齐备（时间+**组织验收**+标准）→ 期望 **0 命中**",
+        },
+    },
+    {
+        "instance_id": "AP-008",
+        "approval_code": "CG-2026-0008",
+        "approval_title": "数据处理服务协议审批（自查 T-03）",
+        "applicant_name": "郑十",
+        "apply_time": "2026-09-17T03:10:00Z",
+        "current_status": "pending",
+        "contract_type": "服务合同",
+        "form_data": {
+            "amount": "180000",
+            "currency": "CNY",
+            "supplier": "某某信息技术有限公司",
+            "department": "数据治理部",
+            "involves_personal_data": "是",
+        },
+        "attachments": [
+            {
+                "attachment_id": "ATT-008",
+                "file_name": "extra/T-03_数据处理服务协议.docx",
+                "file_type": "docx",
+                "file_size": 0,
+            }
+        ],
+        "expected": {
+            "parse_mode": "text",
+            "overall_risk_level": "medium",
+            "expected_hits": ["R009"],
+            "expected_not_hit": ["R001", "R002", "R003", "R004", "R005", "R006", "R007", "R010", "R011"],
+            "llm_dependent": [],
+            "note": "**唯一覆盖 Word(.docx) 路径的样例**；命中 R009 数据处理风险："
+            "含关键词「个人信息」且约定了目的/范围/安全措施，但**缺删除义务** → hit；"
+            "标题写作「交付与验收」用于回归「一标题多字段」；预付款30% 未超阈值故 R001 miss",
+        },
+    },
+    {
+        "instance_id": "AP-009",
+        "approval_code": "CG-2026-0009",
+        "approval_title": "框架采购协议审批（自查 T-04）",
+        "applicant_name": "王十一",
+        "apply_time": "2026-09-18T00:30:00Z",
+        "current_status": "pending",
+        "contract_type": "框架协议",
+        "form_data": {
+            "currency": "CNY",
+            "department": "行政部",
+            "purchase_mode": "框架协议+订单",
+        },
+        "attachments": [
+            {
+                "attachment_id": "ATT-009",
+                "file_name": "extra/T-04_框架采购协议.pdf",
+                "file_type": "pdf",
+                "file_size": 0,
+            }
+        ],
+        "expected": {
+            "parse_mode": "text",
+            "overall_risk_level": "high",
+            "expected_hits": ["R006", "R007"],
+            "expected_not_hit": ["R002", "R003", "R004", "R005", "R008", "R009", "R010", "R011"],
+            "llm_dependent": [],
+            "note": "主体名称与金额都空着 → 命中 R006 主体信息缺失、R007 合同金额缺失；"
+            "**R001 应为 uncertain**（既无金额、又不约定预付款，算不出比例 → 交人工确认），"
+            "故它既不在 expected_hits 也不在 expected_not_hit 里；"
+            "解析页会出现 party_a/party_b/contract_amount/currency 四条 missing",
+        },
+    },
 ]
 
 #: instance_id → 审批单

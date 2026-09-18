@@ -246,14 +246,26 @@ powershell -ExecutionPolicy Bypass -File scripts/dev_down.ps1    # 只停本项�
 
 ## 样例数据
 
-`sample_contracts/` 下已有 5 份自造样例（SD-02），每份随附期望结果（SD-01，见 `expected_results.json`）：
-AP-001/AP-002 文本型 PDF、AP-003 扫描件 PNG、AP-004 附件缺失、AP-005 空文件。
-重新生成：`uv run --project backend python sample_contracts/generate_samples.py`。
+审批系统内共 **9 张单子**，全部为自造文本（SD-02），每份随附期望结果（SD-01，见 `expected_results.json`）：
 
-**另有 4 份给你自己测着玩的合同**（`sample_contracts/extra/`）：T-01「坏合同」一次打中 8 条规则、
-T-02「好合同」零命中对照组、T-03 是 Word 且专打 R009、T-04 主体与金额缺失。
-每份的预期结果、以及测试方法（含一键工具 `scripts/try_contract.py`）见
-`sample_contracts/extra/README.md`。
+| 待办 | 合同 | 附件 | 期望 |
+|---|---|---|---|
+| AP-001 / AP-002 | 采购 / 服务合同 | 文本型 PDF | `high` / `low`（AC04–AC15 主链路） |
+| AP-003 | 采购合同（扫描件） | PNG | 走 OCR（AC05） |
+| AP-004 | 采购合同 | **文件故意缺失** | `blocked`（AC16、AC17） |
+| AP-005 | 框架协议 | 0 字节空文件 | `blocked` / `EMPTY_CONTRACT_CONTENT` |
+| **AP-006** | 设备租赁合同（T-01） | `extra/T-01_设备租赁合同.pdf` | `high`，命中 7 条 |
+| **AP-007** | 技术服务合同（T-02） | `extra/T-02_技术服务合同.pdf` | `low`，0 命中 |
+| **AP-008** | 数据处理服务协议（T-03） | `extra/T-03_数据处理服务协议.docx` | `medium`，命中 R009（**唯一 Word 样例**） |
+| **AP-009** | 框架采购协议（T-04） | `extra/T-04_框架采购协议.pdf` | `high`，命中 R006/R007 |
+
+前 5 份（AP-001…AP-005）是 SPEC §15 要求的固定回归样例，重新生成：
+`uv run --project backend python sample_contracts/generate_samples.py`。
+后 4 份（AP-006…AP-009）是**自查样例**，一份合同一张单子、结果互不覆盖：
+源文本与生成器在 `sample_contracts/extra/`，说明见 `sample_contracts/extra/README.md`。
+
+> 想拿**自己的**合同测（任意 PDF/Word/扫描件）：`scripts/try_contract.py` 会借一个槽位、
+> 跑完整链路、打印逐条判定，再自动还原。见 `sample_contracts/extra/README.md`。
 
 ## OCR 环境须知（重要）
 

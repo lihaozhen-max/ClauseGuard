@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -21,14 +23,17 @@ def mock(mock_app) -> TestClient:
     return TestClient(mock_app)
 
 
-# ── FR-MOCK-03：内置 5 个样例审批单 ─────────────────────────────────────────
+# ── FR-MOCK-03：内置样例审批单（数量以 seed.APPROVALS 为准）──────────────────
 
 
-def test_pending_returns_all_five_samples(mock: TestClient) -> None:
-    response = mock.get("/approvals/pending", params={"limit": 20}, headers=HEADERS)
+def test_pending_returns_all_samples(mock: TestClient, mock_module: Any) -> None:
+    response = mock.get("/approvals/pending", params={"limit": 50}, headers=HEADERS)
     assert response.status_code == 200
     items = response.json()["items"]
-    assert [item["instance_id"] for item in items] == ["AP-001", "AP-002", "AP-003", "AP-004", "AP-005"]
+    ids = [item["instance_id"] for item in items]
+    # 不写死条数：seed.py 里加/减样例单时自动跟随；这里断言"全都在 + 顺序稳定"
+    assert ids == [item["instance_id"] for item in mock_module.APPROVALS]
+    assert {"AP-001", "AP-002", "AP-003", "AP-004", "AP-005"} <= set(ids)
     # 7.1 要求的字段必须齐备
     required = {
         "instance_id",
@@ -133,9 +138,11 @@ def test_mock_requires_api_key(mock: TestClient) -> None:
     assert mock.get("/health").status_code == 200  # 健康检查不需要鉴权
 
 
-def test_health_reports_missing_attachment_files(mock: TestClient) -> None:
+def test_health_reports_missing_attachment_files(mock: TestClient, mock_module: Any) -> None:
     body = mock.get("/health").json()
     assert body["status"] == "ok"
-    assert body["approvals"] == 5
+    # 数量以 seed.py 为唯一来源：加/减样例单时这里自动跟随，不必再手改
+    assert body["approvals"] == len(mock_module.APPROVALS)
+    assert body["approvals"] >= 5
     # 只有 AP-004 的附件故意缺失
     assert body["missing_attachment_files"] == ["AP-004_办公用品采购合同.pdf"]

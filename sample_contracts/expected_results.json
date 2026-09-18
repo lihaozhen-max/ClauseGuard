@@ -98,6 +98,102 @@
       "expected_hits": [],
       "expected_miss": [],
       "note": "0 字节文件 → 下载成功但解析为空 → blocked / EMPTY_CONTRACT_CONTENT（或 PARSE_FAILED）"
+    },
+    "AP-006": {
+      "approval_code": "CG-2026-0006",
+      "contract_type": "租赁合同",
+      "file_name": "extra/T-01_设备租赁合同.pdf",
+      "parse_mode": "text",
+      "overall_risk_level": "high",
+      "expected_hits": [
+        "R001",
+        "R002",
+        "R003",
+        "R005",
+        "R008",
+        "R010",
+        "R011"
+      ],
+      "expected_not_hit": [
+        "R006",
+        "R007",
+        "R009"
+      ],
+      "llm_dependent": [
+        "R004"
+      ],
+      "note": "故意写差的合同：预付款50%(R001)、尾款120天(R002)、期满自动续约(R003)、乙方所在地管辖(R005)、缺保密(R008)、缺知识产权(R010)、验收无标准(R011)；主体与金额齐全故 R006/R007 miss；不涉数据处理故 R009 miss；R004 由 LLM 判定违约责任是否对等（关闭 LLM 时为 uncertain）"
+    },
+    "AP-007": {
+      "approval_code": "CG-2026-0007",
+      "contract_type": "服务合同",
+      "file_name": "extra/T-02_技术服务合同.pdf",
+      "parse_mode": "text",
+      "overall_risk_level": "low",
+      "expected_hits": [],
+      "expected_not_hit": [
+        "R001",
+        "R002",
+        "R003",
+        "R004",
+        "R005",
+        "R006",
+        "R007",
+        "R008",
+        "R009",
+        "R010",
+        "R011"
+      ],
+      "llm_dependent": [
+        "R004"
+      ],
+      "note": "条款齐备的对照组：预付款20%(≤30%故 R001 miss)、尾款30天、无自动续约、违约责任对等、向甲方所在地起诉、有保密与知识产权条款、验收三要素齐备（时间+**组织验收**+标准）→ 期望 **0 命中**"
+    },
+    "AP-008": {
+      "approval_code": "CG-2026-0008",
+      "contract_type": "服务合同",
+      "file_name": "extra/T-03_数据处理服务协议.docx",
+      "parse_mode": "text",
+      "overall_risk_level": "medium",
+      "expected_hits": [
+        "R009"
+      ],
+      "expected_not_hit": [
+        "R001",
+        "R002",
+        "R003",
+        "R004",
+        "R005",
+        "R006",
+        "R007",
+        "R010",
+        "R011"
+      ],
+      "llm_dependent": [],
+      "note": "**唯一覆盖 Word(.docx) 路径的样例**；命中 R009 数据处理风险：含关键词「个人信息」且约定了目的/范围/安全措施，但**缺删除义务** → hit；标题写作「交付与验收」用于回归「一标题多字段」；预付款30% 未超阈值故 R001 miss"
+    },
+    "AP-009": {
+      "approval_code": "CG-2026-0009",
+      "contract_type": "框架协议",
+      "file_name": "extra/T-04_框架采购协议.pdf",
+      "parse_mode": "text",
+      "overall_risk_level": "high",
+      "expected_hits": [
+        "R006",
+        "R007"
+      ],
+      "expected_not_hit": [
+        "R002",
+        "R003",
+        "R004",
+        "R005",
+        "R008",
+        "R009",
+        "R010",
+        "R011"
+      ],
+      "llm_dependent": [],
+      "note": "主体名称与金额都空着 → 命中 R006 主体信息缺失、R007 合同金额缺失；**R001 应为 uncertain**（既无金额、又不约定预付款，算不出比例 → 交人工确认），故它既不在 expected_hits 也不在 expected_not_hit 里；解析页会出现 party_a/party_b/contract_amount/currency 四条 missing"
     }
   }
 }
