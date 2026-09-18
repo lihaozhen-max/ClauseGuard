@@ -1,4 +1,4 @@
-"""DeepSeek 客户端（CF-13…CF-18、设计 §9.2）。
+﻿"""DeepSeek 客户端（CF-13…CF-18、设计 §9.2）。
 
 两个已实测的硬性约束（设计 §9.2.2 / 风险 R10、R11）：
 
@@ -45,7 +45,9 @@ class DeepSeekClient:
             kwargs["http_client"] = http_client
         self._client = AsyncOpenAI(**kwargs)
 
-    async def judge_json(self, *, system: str, user: str) -> dict[str, Any] | None:
+    async def complete_json(
+        self, *, system: str, user: str, purpose: str = "json_completion"
+    ) -> dict[str, Any] | None:
         """调用聊天补全并解析 JSON；失败返回 ``None``（LM-13）。"""
         last_error: str | None = None
         for attempt in range(1, MAX_ATTEMPTS + 1):
@@ -62,7 +64,7 @@ class DeepSeekClient:
                 )
             except Exception as exc:  # noqa: BLE001 - 网络/超时/鉴权都要降级
                 last_error = f"{type(exc).__name__}: {exc}"
-                self._log(LLMCallLog("semantic_judge", self.model, time.perf_counter() - started, True, error=last_error))
+                self._log(LLMCallLog(purpose, self.model, time.perf_counter() - started, True, error=last_error))
                 logger.warning("LLM 调用失败（第 %d/%d 次）：%s", attempt, MAX_ATTEMPTS, last_error)
                 continue
 
@@ -77,8 +79,7 @@ class DeepSeekClient:
                 # 最典型的成因是 max_tokens 被推理过程吃掉（HTTP 仍为 200）
                 last_error = "content 为空（疑似推理 token 耗尽 max_tokens）"
                 self._log(
-                    LLMCallLog(
-                        "semantic_judge",
+                    LLMCallLog(purpose,
                         self.model,
                         duration,
                         True,
@@ -93,8 +94,7 @@ class DeepSeekClient:
 
             payload = extract_json_object(content)
             self._log(
-                LLMCallLog(
-                    "semantic_judge",
+                LLMCallLog(purpose,
                     self.model,
                     duration,
                     payload is None,

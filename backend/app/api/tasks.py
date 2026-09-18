@@ -25,10 +25,12 @@ from app.core.enums import TaskStatus
 from app.core.errors import AppError, ErrorCode
 from app.core.security import require_api_key
 from app.db.models import ApprovalTask
-from app.db.session import get_session
+from app.db.session import get_session, session_scope
 from app.llm.base import LLMClient
 from app.modules.approval.service import get_local_task, list_local_tasks
+from app.modules.comment.service import list_comment_logs
 from app.modules.parser.service import get_parse_row, row_to_outcome
+from app.modules.review.service import get_review_result as get_review_result_row
 from app.modules.review.summary import build_template_focus_points, build_template_summary
 from app.modules.rules.aggregator import aggregate_overall_risk, count_by_status
 from app.modules.rules.loader import load_all_rules
@@ -42,10 +44,17 @@ from app.schemas.approval import (
     TaskListResponse,
 )
 from app.schemas.parse import ParseResultResponse
-from app.schemas.review import RuleHitModel, RuleRunResponse
+from app.schemas.review import (
+    CommentLogList,
+    CommentLogModel,
+    CommentWriteModel,
+    ReviewPipelineResponse,
+    RuleHitModel,
+)
 from app.tools.approval import get_contract_approval, list_pending_contract_approvals
+from app.tools.comment import write_approval_comment
 from app.tools.parser import parse_task
-from app.tools.rules import run_contract_rules
+from app.tools.review import run_full_review
 
 router = APIRouter(prefix="/api", tags=["任务"], dependencies=[Depends(require_api_key)])
 
@@ -202,55 +211,8 @@ async def trigger_parse(
     return ParseResultResponse(**outcome.to_dict())
 
 
-def _to_review_response(
-    task_id: int, hits: list[dict[str, Any]], *, evaluated_rules: int = 0
-) -> RuleRunResponse:
-    """由命中列表重建审查结果视图（IF-15 从库中读取时复用同一套汇总口径）。"""
-    overall = aggregate_overall_risk(
-        [{"hit_status": item["hit_status"], "risk_level": item["risk_level"]} for item in hits]
-    )
-    counts = count_by_status([{"hit_status": item["hit_status"]} for item in hits])
-    return RuleRunResponse(
-        case_id=task_id,
-        overall_risk_level=overall,
-        hit_count=counts["hit"],
-        uncertain_count=counts["uncertain"],
-        rule_hits=[RuleHitModel(**item) for item in hits],
-        summary_text=build_template_summary(hits),
-        focus_points=build_template_focus_points(hits),
-        evaluated_rules=evaluated_rules or len(hits),
-    )
-
-
-@router.get("/tasks/{task_id}/review", response_model=RuleRunResponse, summary="IF-15 审查结果")
-async def get_review_result(
-    task_id: int,
-    session: AsyncSession = Depends(get_session),
-) -> RuleRunResponse:
-    """查询已落库的规则审查结果（含证据、位置、建议与整体等级）。
-
-    尚未执行规则审查 → ``409 PARSE_REQUIRED``（消息会说明"请先触发审查"）。
-    """
-    task = await get_local_task(session, task_id)
-    if task is None:
-        raise AppError(
-            ErrorCode.APPROVAL_NOT_FOUND,
-            f"任务 {task_id} 不存在",
-            task_id=task_id,
-            detail={"task_id": task_id},
-        )
-
-    rows = await list_rule_hits(session, task_id)
-    if not rows:
-        raise AppError(
-            ErrorCode.PARSE_REQUIRED,
-            f"任务 {task_id} 尚未执行规则审查，请先调用 POST /api/tasks/{task_id}/review",
-            task_id=task_id,
-            detail={"task_id": task_id},
-        )
-
-    rules = {rule.id: rule for rule in await load_all_rules(session)}
-    hits = [
+def _hits_from_rows(rows: list[Any], rules: dict[int, Any]) -> list[dict[str, Any]]:
+    return [
         {
             "rule_code": rules[row.rule_id].rule_code if row.rule_id in rules else str(row.rule_id),
             "rule_name": rules[row.rule_id].rule_name if row.rule_id in rules else "",
@@ -264,14 +226,164 @@ async def get_review_result(
         }
         for row in rows
     ]
-    return _to_review_response(task_id, hits)
 
 
-@router.post("/tasks/{task_id}/review", response_model=RuleRunResponse, summary="IF-16 触发规则审查")
+def _to_pipeline_response(
+    task_id: int,
+    hits: list[dict[str, Any]],
+    review: Any | None,
+    task: Any | None,
+) -> ReviewPipelineResponse:
+    """由库中命中与已保存的审查结果重建 IF-15/IF-16 的返回视图。"""
+    overall = (
+        review.overall_risk_level
+        if review is not None
+        else aggregate_overall_risk(
+            [{"hit_status": item["hit_status"], "risk_level": item["risk_level"]} for item in hits]
+        )
+    )
+    counts = count_by_status([{"hit_status": item["hit_status"]} for item in hits])
+    return ReviewPipelineResponse(
+        case_id=task_id,
+        review_id=review.id if review is not None else None,
+        overall_risk_level=overall,
+        hit_count=counts["hit"],
+        uncertain_count=counts["uncertain"],
+        evaluated_rules=len(hits),
+        rule_hits=[RuleHitModel(**item) for item in hits],
+        summary_text=review.summary_text if review is not None else build_template_summary(hits),
+        focus_points=list(review.focus_points_json or []) if review is not None else build_template_focus_points(hits),
+        comment_text=review.comment_text if review is not None else "",
+        task_status=task.task_status if task is not None else None,
+        write_status=task.write_status if task is not None else None,
+    )
+
+
+@router.get(
+    "/tasks/{task_id}/review",
+    response_model=ReviewPipelineResponse,
+    summary="IF-15 审查结果",
+)
+async def get_review_result(
+    task_id: int,
+    session: AsyncSession = Depends(get_session),
+) -> ReviewPipelineResponse:
+    """查询已落库的审查结果（规则命中 + 整体等级 + 摘要 + 关注点 + 评论正文）。
+
+    尚未执行审查 → ``409 PARSE_REQUIRED``（消息会说明"请先触发审查"）。
+    """
+    task = await get_local_task(session, task_id)
+    if task is None:
+        raise AppError(
+            ErrorCode.APPROVAL_NOT_FOUND,
+            f"任务 {task_id} 不存在",
+            task_id=task_id,
+            detail={"task_id": task_id},
+        )
+
+    review = await get_review_result_row(session, task_id)
+    rows = await list_rule_hits(session, task_id)
+    if review is None and not rows:
+        raise AppError(
+            ErrorCode.PARSE_REQUIRED,
+            f"任务 {task_id} 尚未执行规则审查，请先调用 POST /api/tasks/{task_id}/review",
+            task_id=task_id,
+            detail={"task_id": task_id},
+        )
+
+    rules = {rule.id: rule for rule in await load_all_rules(session)}
+    return _to_pipeline_response(task_id, _hits_from_rows(rows, rules), review, task)
+
+
+@router.post(
+    "/tasks/{task_id}/review",
+    response_model=ReviewPipelineResponse,
+    summary="IF-16 触发审查并保存结果",
+)
 async def trigger_review(
     task_id: int,
     llm: LLMClient = Depends(get_llm_client),
-) -> RuleRunResponse:
-    """触发规则审查（IF-05）：加载启用规则、执行、覆盖落库并汇总（FR-RULE-07）。"""
-    result = await run_contract_rules(task_id, llm=llm)
-    return RuleRunResponse(**result.to_dict())
+    session: AsyncSession = Depends(get_session),
+) -> ReviewPipelineResponse:
+    """触发完整审查（IF-05 规则判定 + 摘要/关注点 + §4.6.1 评论 + IF-06 落库 → ``done``）。"""
+    pipeline = await run_full_review(task_id, llm=llm)
+
+    task = await get_local_task(session, task_id)
+    rules = {rule.id: rule for rule in await load_all_rules(session)}
+    rows = await list_rule_hits(session, task_id)
+    response = _to_pipeline_response(task_id, _hits_from_rows(rows, rules), None, task)
+    # 用本次运行的结果覆盖（库中读数与运行结果一致，这里显式带上评论与降级标记）
+    response.review_id = pipeline.saved.review_id
+    response.summary_text = pipeline.saved.summary_text
+    response.focus_points = pipeline.saved.focus_points
+    response.comment_text = pipeline.saved.comment_text
+    response.summary_degraded = pipeline.saved.summary_degraded
+    response.warnings = list(pipeline.run.warnings)
+    return response
+
+
+@router.post(
+    "/tasks/{task_id}/write-comment",
+    response_model=CommentWriteModel,
+    summary="IF-17 触发/重试评论回写",
+)
+async def trigger_write_comment(
+    task_id: int,
+    client: ApprovalSystemClient = Depends(get_approval_client),
+) -> CommentWriteModel:
+    """把已保存的审查结果写回审批系统评论区（幂等，IF-07）。"""
+    async with session_scope() as session:
+        task = await get_local_task(session, task_id)
+        if task is None:
+            raise AppError(
+                ErrorCode.APPROVAL_NOT_FOUND,
+                f"任务 {task_id} 不存在",
+                task_id=task_id,
+                detail={"task_id": task_id},
+            )
+        review = await get_review_result_row(session, task_id)
+        if review is None:
+            raise AppError(
+                ErrorCode.PARSE_REQUIRED,
+                f"任务 {task_id} 尚未生成审查结果，请先调用 POST /api/tasks/{task_id}/review",
+                task_id=task_id,
+                detail={"task_id": task_id},
+            )
+    result = await write_approval_comment(task.instance_id, review.id, client=client)
+    return CommentWriteModel(**result.to_dict())
+
+
+@router.get(
+    "/tasks/{task_id}/comment-logs",
+    response_model=CommentLogList,
+    summary="IF-18 回写历史",
+)
+async def get_comment_logs(
+    task_id: int,
+    session: AsyncSession = Depends(get_session),
+) -> CommentLogList:
+    """查询评论回写状态与历史（DT-07）。"""
+    task = await get_local_task(session, task_id)
+    if task is None:
+        raise AppError(
+            ErrorCode.APPROVAL_NOT_FOUND,
+            f"任务 {task_id} 不存在",
+            task_id=task_id,
+            detail={"task_id": task_id},
+        )
+    rows = await list_comment_logs(session, task_id)
+    return CommentLogList(
+        items=[
+            CommentLogModel(
+                id=row.id,
+                task_id=row.task_id,
+                write_status=row.write_status,
+                write_response_text=row.write_response_text,
+                remark_id=row.remark_id,
+                idempotency_key=row.idempotency_key,
+                created_at=row.created_at,
+            )
+            for row in rows
+        ],
+        total=len(rows),
+    )

@@ -1,4 +1,4 @@
-"""M3 LLM 客户端用例（SPEC §10 LM-07…LM-18、TS-16）。
+﻿"""M3 LLM 客户端用例（SPEC §10 LM-07…LM-18、TS-16）。
 
 分三层：
 
@@ -77,7 +77,7 @@ def test_parse_judgement_normalises_fields() -> None:
 def test_null_client_is_always_unusable() -> None:
     client = NullLLMClient()
     assert client.enabled is False
-    assert run(client.judge_json(system="s", user="u")) is None
+    assert run(client.complete_json(system="s", user="u")) is None
     judgement = run(judge_semantic(client, question="q", context="c"))
     assert judgement.hit is None
     assert judgement.degraded is True
@@ -126,7 +126,7 @@ def test_deepseek_parses_valid_json(monkeypatch: pytest.MonkeyPatch) -> None:
         return httpx.Response(200, json=_completion('{"hit": true, "reason": "不对等"}', reasoning="思考中"))
 
     client = _client(handler, monkeypatch)
-    payload = run(client.judge_json(system="s", user="u"))
+    payload = run(client.complete_json(system="s", user="u"))
     assert payload == {"hit": True, "reason": "不对等"}
     assert len(calls) == 1
     body = json.loads(calls[0].content.decode("utf-8"))
@@ -145,7 +145,7 @@ def test_deepseek_treats_empty_content_as_failure(monkeypatch: pytest.MonkeyPatc
         return httpx.Response(200, json=_completion("", reasoning="很长很长的推理过程"))
 
     client = _client(handler, monkeypatch)
-    assert run(client.judge_json(system="s", user="u")) is None
+    assert run(client.complete_json(system="s", user="u")) is None
     assert attempts["count"] == MAX_ATTEMPTS  # LM-12：重试上限 ≤2
 
 
@@ -154,7 +154,7 @@ def test_deepseek_treats_invalid_json_as_failure(monkeypatch: pytest.MonkeyPatch
         return httpx.Response(200, json=_completion("这不是 JSON"))
 
     client = _client(handler, monkeypatch)
-    assert run(client.judge_json(system="s", user="u")) is None
+    assert run(client.complete_json(system="s", user="u")) is None
 
 
 def test_deepseek_retries_then_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -167,7 +167,7 @@ def test_deepseek_retries_then_succeeds(monkeypatch: pytest.MonkeyPatch) -> None
         return httpx.Response(200, json=_completion('{"hit": false}'))
 
     client = _client(handler, monkeypatch)
-    assert run(client.judge_json(system="s", user="u")) == {"hit": False}
+    assert run(client.complete_json(system="s", user="u")) == {"hit": False}
     assert attempts["count"] == 2
 
 
@@ -176,7 +176,7 @@ def test_deepseek_swallows_transport_errors(monkeypatch: pytest.MonkeyPatch) -> 
         raise httpx.ConnectError("网络不可达")
 
     client = _client(handler, monkeypatch)
-    assert run(client.judge_json(system="s", user="u")) is None
+    assert run(client.complete_json(system="s", user="u")) is None
 
 
 # ── 真实端点冒烟（标记 llm，默认跑；无 Key 时跳过）────────────────────────

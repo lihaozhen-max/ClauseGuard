@@ -10,12 +10,18 @@ from typing import Any
 
 
 class NullLLMClient:
-    """空实现。``judge_json`` 恒返回 None → 调用方记 ``uncertain`` 并走模板降级。"""
+    """空实现。``complete_json`` 恒返回 None。
+
+    后果（全部是**设计内**的降级，不是错误）：
+    语义型规则记 ``uncertain``；摘要与关注点走 §10.4 模板；任务**不会**因此进入 ``blocked``。
+    """
 
     def __init__(self, reason: str = "LLM 未启用") -> None:
         self.enabled = False
         self.model = "null"
         self.reason = reason
 
-    async def judge_json(self, *, system: str, user: str) -> dict[str, Any] | None:  # noqa: ARG002
+    async def complete_json(
+        self, *, system: str, user: str, purpose: str = "json_completion"
+    ) -> dict[str, Any] | None:  # noqa: ARG002
         return None

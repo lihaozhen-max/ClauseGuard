@@ -76,13 +76,23 @@ class SemanticJudgement:
 
 @runtime_checkable
 class LLMClient(Protocol):
-    """LLM 客户端抽象（业务层只依赖它，便于替换 OpenAI 兼容端点）。"""
+    """LLM 客户端抽象（业务层只依赖它，便于替换 OpenAI 兼容端点）。
+
+    ``complete_json`` 是**唯一的调用入口**，同时服务三类白名单用途（LM-01…LM-03）：
+    语义规则判定、中文摘要生成、审批关注点生成。
+    """
 
     enabled: bool
     model: str
 
-    async def judge_json(self, *, system: str, user: str) -> dict[str, Any] | None:
-        """返回解析后的 JSON 对象；任何失败（超时/空 content/非法 JSON/非 200）一律返回 None。"""
+    async def complete_json(
+        self, *, system: str, user: str, purpose: str = "json_completion"
+    ) -> dict[str, Any] | None:
+        """返回解析后的 JSON 对象；任何失败（超时/空 content/非法 JSON/非 200）一律返回 None。
+
+        ``purpose`` 只用于日志（LM-17 要求记录调用用途），取值如
+        ``semantic_judge``（语义规则判定）、``summary_generation``（摘要与关注点）。
+        """
         ...
 
 
@@ -171,9 +181,10 @@ async def judge_semantic(
     都不得穿透到规则层——LLM 是增强项，坏掉只能降级，不能把整条审查链打断。
     """
     try:
-        payload = await client.judge_json(
+        payload = await client.complete_json(
             system=SYSTEM_PROMPT,
             user=USER_TEMPLATE.format(question=question, context=context),
+            purpose="semantic_judge",
         )
     except Exception as exc:  # noqa: BLE001 - 见 docstring
         return SemanticJudgement(

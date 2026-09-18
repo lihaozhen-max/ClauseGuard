@@ -1,4 +1,4 @@
-"""pytest 公共夹具。
+﻿"""pytest 公共夹具。
 
 数据库集成用例统一用 :func:`db_run` 在**独立事件循环**中执行：
 engine 是进程级单例，跨事件循环复用会出问题，因此每次用完整轮次都释放连接池。
@@ -142,7 +142,7 @@ class StubLLMClient:
         self.raise_error = raise_error
         self.calls: list[dict[str, str]] = []
 
-    async def judge_json(self, *, system: str, user: str) -> dict[str, Any] | None:
+    async def complete_json(self, *, system: str, user: str, purpose: str = "json_completion") -> dict[str, Any] | None:  # noqa: ARG002
         self.calls.append({"system": system, "user": user})
         if self.raise_error:
             raise RuntimeError("stub LLM 故障")

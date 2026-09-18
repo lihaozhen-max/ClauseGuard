@@ -21,7 +21,7 @@ from app.clients.approval_client import ApprovalSystemClient
 from app.core.config import PROJECT_ROOT, get_settings
 from app.core.enums import HitSource, HitStatus
 from app.core.errors import AppError, ErrorCode
-from app.db.models import ApprovalTask, ContractParse, RuleHit
+from app.db.models import ApprovalTask, ContractParse, ReviewResult, RuleHit
 from app.db.session import session_scope
 from app.llm.null import NullLLMClient
 from app.main import app as service_app
@@ -319,7 +319,10 @@ def api_client(mock_app: Any) -> Any:
 
 @pytest.fixture
 def ap002_task_id(db_runner) -> int:
-    """清掉 AP-002 的既有命中，并返回其 task_id。
+    """清掉 AP-002 的既有命中**与审查结果**，并返回其 task_id。
+
+    M4 起 IF-15 以"是否已生成审查结果"为判据，因此这里两样都要清，
+    才能复现"尚未执行审查"。
 
     注意：所有 ``db_runner`` 调用都在 **TestClient 创建之前**完成——
     engine 是进程级单例，跨事件循环复用在测试里会炸
@@ -328,12 +331,13 @@ def ap002_task_id(db_runner) -> int:
     task = db_runner(lambda: _task_of("AP-002"))
     assert task is not None
 
-    async def clear_hits() -> None:
+    async def clear() -> None:
         async with session_scope() as session:
             await session.execute(delete(RuleHit).where(RuleHit.task_id == task.id))
+            await session.execute(delete(ReviewResult).where(ReviewResult.task_id == task.id))
             await session.commit()
 
-    db_runner(clear_hits)
+    db_runner(clear)
     return task.id
 
 
