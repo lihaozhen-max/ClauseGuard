@@ -20,6 +20,7 @@
 | `docs/M3-验收记录.md` | CG-M3-001 | M3 规则引擎 + 11 条规则 + 风险汇总 + 证据定位的验证证据与决策记录 |
 | `docs/M4-验收记录.md` | CG-M4-001 | M4 摘要/关注点 + 结果入库 + 评论回写的验证证据与决策记录 |
 | `docs/M5-验收记录.md` | CG-M5-001 | M5 异常阻塞 + 人工重试 + 全链路日志的验证证据与决策记录 |
+| `docs/M6-验收记录.md` | CG-M6-001 | M6 前端五模块 + 规则维护 + 日志页的验证证据与决策记录 |
 
 文档冲突时的裁决顺序：用户指令 → PRD → SPEC → 设计文档 → 通用工程习惯（SPEC §0.2）。
 
@@ -32,7 +33,7 @@
 | 数据 | MySQL 8（Docker Compose）+ SQLAlchemy 2.0.54 异步 + **asyncmy** 驱动 |
 | 解析 | PyMuPDF / pdfplumber / python-docx + PaddleOCR（本地，M2） |
 | LLM | DeepSeek 官方 API（`deepseek-flash`，OpenAI 兼容；可整体降级） |
-| 前端 | Vue 3 + Element Plus + Vite（M6） |
+| 前端 | Vue 3 + Element Plus + Vite 6 + TypeScript（调用端，M6） |
 
 > Python 必须是 3.13：`paddlepaddle` 无 3.14 轮子（设计 R1，已实测确认）。
 
@@ -138,6 +139,24 @@ uv run pytest -q -m "not slow and not llm"  # 跳过 OCR 与 LLM，约 15 秒
 - 待办拉取用例通过 ASGI 内存传输直连模拟审批系统，不必先启动 8100 进程；
 - 标记说明：`slow` = 真实 OCR 推理；`llm` = 真实 LLM 端点调用（无 Key 时自动跳过）。
 
+### 8. 启动调用端（前端，端口 5173；另开一个终端）
+
+```powershell
+cd ClauseGuard/frontend-or-client
+npm install
+Copy-Item .env.example .env.local     # 填入 VITE_INTERNAL_API_KEY（= 后端 .env 的 INTERNAL_API_KEY）
+npm run dev
+```
+
+浏览器打开 **http://127.0.0.1:5173**。前端通过 Vite 代理把 `/api` 转发到 `127.0.0.1:8000`，
+因此**不需要**给后端加 CORS。若不想把密钥写进文件，也可以留空配置，
+在页面右上角「接口密钥」对话框里临时填写（存在浏览器 localStorage，换后端无需重新构建）。
+
+```powershell
+npm run typecheck   # vue-tsc --noEmit
+npm run build       # 产出 dist/
+```
+
 ## 端口约定
 
 | 端口 | 服务 |
@@ -164,8 +183,8 @@ uv run pytest -q -m "not slow and not llm"  # 跳过 OCR 与 LLM，约 15 秒
 | **M3** | 规则引擎 + 11 条规则 + 风险汇总 + 证据定位 | ✅ **已完成**（`docs/M3-验收记录.md`，AC08–AC10） |
 | **M4** | 摘要/关注点 + 结果入库 + 评论生成与回写 | ✅ **已完成**（`docs/M4-验收记录.md`，AC11–AC15） |
 | **M5** | `blocked` 状态 + 人工重试 + 全链路日志 | ✅ **已完成**（`docs/M5-验收记录.md`，AC16–AC18） |
-| M6 | 前端五个模块 + 规则维护 + 日志页 | ⏳ |
-| M7 | 闭环演示 + 测试 + 截图 + 文档与交付整理 | ⏳ |
+| **M6** | 前端五个模块 + 规则维护（IF-21）+ 日志页 | ✅ **已完成**（`docs/M6-验收记录.md`，FR-UI-01…08、NF-10） |
+| M7 | 闭环演示 + 截图 + 文档与交付整理 | ⏳ |
 
 ## 样例数据
 
@@ -224,3 +243,17 @@ POST /api/tasks/{id}/retry      仅对 blocked 任务：从失败阶段重入并
 任一阶段不可恢复失败时任务进入 `blocked` 并记录 `blocked_stage` + `error_code`，
 任务日志同时落库（`pull`/`download`/`parse`/`ocr`/`extract`/`rule`/`save`/`write_comment`/`retry`）；
 排除故障后调 `retry` 即可续跑，`retry_count` 累加（ST-01-02 / ST-01-03 / AC16–AC18）。
+
+## 调用端页面（M6）
+
+| 路由 | 页面 | SPEC |
+|---|---|---|
+| `/tasks` | 待办调用：审批编号/标题/申请人/申请时间/附件数/任务状态 + 拉取、筛选、`blocked` 重试入口 | FR-UI-01 |
+| `/tasks/{id}/detail` | 详情查看：审批基本信息、表单数据、合同附件（**仅元数据**，FR-SYS-02） | FR-UI-02 |
+| `/tasks/{id}/parse` | 解析结果：基本信息 + 条款 + 原文片段 + 位置 + 提取状态（`missing`/`failed` 高亮） | FR-UI-03 |
+| `/tasks/{id}/review` | 规则命中：总风险等级（三色）/风险数量/规则名/等级/证据/位置/建议 + 关注点 | FR-UI-04、NF-10 |
+| `/tasks/{id}/result` | 结果处理：评论正文、回写状态/时间/错误 + 回写与重试按钮 | FR-UI-05、FR-UI-06 |
+| `/tasks/{id}/logs` | 任务日志：8 类核心操作覆盖情况 + 全链路日志明细 | FR-UI-07、AC18 |
+| `/rules` | 规则维护：启用/停用、改等级、改建议、新增规则 | FR-UI-08、IF-21 |
+
+验收截图见 `screenshots/`。

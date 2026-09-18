@@ -15,6 +15,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app import __version__
+from app.api.rules import router as rules_router
 from app.api.tasks import router as tasks_router
 from app.core.config import get_settings
 from app.core.errors import AppError, ErrorCode
@@ -63,8 +64,9 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# 内部 REST：IF-10…IF-12（M1），后续里程碑继续在 app/api/ 中追加
+# 内部 REST：IF-10…IF-12（M1），IF-13…IF-20（M2–M5），IF-21（M6）
 app.include_router(tasks_router)
+app.include_router(rules_router)
 
 
 @app.get("/health", tags=["系统"], summary="健康检查（无需鉴权）")

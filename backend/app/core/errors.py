@@ -27,9 +27,13 @@ class ErrorCode(str, Enum):
     COMMENT_WRITE_FAILED = "COMMENT_WRITE_FAILED"
     UNAUTHORIZED = "UNAUTHORIZED"
 
-    # 框架级补充码（SPEC §5.4 未列，用于满足 NF-09"错误必须返回统一结构"）
+    # 补充码（SPEC §5.4 未列）
+    # - VALIDATION_ERROR / INTERNAL_ERROR：框架级，用于满足 NF-09"错误必须返回统一结构"
+    # - RULE_NOT_FOUND：M6 规则维护接口（IF-21）的 404，SPEC 只列了"审批实例不存在"，
+    #   未给"规则不存在"留码；直接复用 APPROVAL_NOT_FOUND 会造成语义误读（见 M6-A）
     VALIDATION_ERROR = "VALIDATION_ERROR"
     INTERNAL_ERROR = "INTERNAL_ERROR"
+    RULE_NOT_FOUND = "RULE_NOT_FOUND"
 
 
 class ErrorSpec:
@@ -76,6 +80,8 @@ ERROR_SPECS: dict[ErrorCode, ErrorSpec] = {
     ErrorCode.UNAUTHORIZED: ErrorSpec(401, _UNCHANGED, _UNCHANGED),
     ErrorCode.VALIDATION_ERROR: ErrorSpec(422, _UNCHANGED, _UNCHANGED),
     ErrorCode.INTERNAL_ERROR: ErrorSpec(500, _UNCHANGED, _UNCHANGED),
+    # 规则维护（IF-21）：规则不存在不涉及任何任务，故三项影响均为"不变"
+    ErrorCode.RULE_NOT_FOUND: ErrorSpec(404, _UNCHANGED, _UNCHANGED),
 }
 
 

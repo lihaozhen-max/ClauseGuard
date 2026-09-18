@@ -1,0 +1,185 @@
+/* 全局样式：只放布局骨架与 NF-10 的三色语义，组件内样式留在各自 SFC 里。 */
+
+:root {
+  --cg-bg: #f5f7fa;
+  --cg-border: #e4e7ed;
+  /* NF-10：低/中/高三色 */
+  --cg-risk-low: #67c23a;
+  --cg-risk-medium: #e6a23c;
+  --cg-risk-high: #f56c6c;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: 'Microsoft YaHei', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;
+  background: var(--cg-bg);
+  color: #303133;
+}
+
+/* ── 布局 ─────────────────────────────────────────────── */
+.app-shell {
+  height: 100%;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #1f2d3d;
+  color: #fff;
+  padding: 0 20px;
+  height: 56px;
+}
+
+.app-header .brand {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.app-header .brand-mark {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.app-header .brand-sub {
+  font-size: 13px;
+  opacity: 0.75;
+}
+
+.app-header .header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.app-aside {
+  background: #fff;
+  border-right: 1px solid var(--cg-border);
+}
+
+.app-main {
+  padding: 16px;
+  overflow: auto;
+}
+
+/* ── 通用块 ───────────────────────────────────────────── */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.card {
+  background: #fff;
+  border: 1px solid var(--cg-border);
+  border-radius: 4px;
+  padding: 16px;
+}
+
+.card-title {
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.toolbar .spacer {
+  flex: 1;
+}
+
+.muted {
+  color: #909399;
+  font-size: 12px;
+}
+
+.mono {
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 12px;
+}
+
+.pre-block {
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: #fafafa;
+  border: 1px solid var(--cg-border);
+  border-radius: 4px;
+  padding: 12px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+/* ── NF-10 风险三色 ───────────────────────────────────── */
+.risk-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.risk-low {
+  background: var(--cg-risk-low);
+}
+
+.risk-medium {
+  background: var(--cg-risk-medium);
+}
+
+.risk-high {
+  background: var(--cg-risk-high);
+}
+
+.risk-unknown {
+  background: #909399;
+}
+
+/* 解析结果：missing / failed 行必须视觉区分（FR-UI-03） */
+.el-table .row-extract-missing td.el-table__cell {
+  background: #fdf6ec !important;
+}
+
+.el-table .row-extract-failed td.el-table__cell {
+  background: #fef0f0 !important;
+}
+
+.el-table .row-hit td.el-table__cell {
+  background: #fef0f0 !important;
+}
+
+.evidence {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
