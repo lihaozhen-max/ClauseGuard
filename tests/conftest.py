@@ -1,4 +1,4 @@
-﻿"""pytest 公共夹具。
+"""pytest 公共夹具。
 
 数据库集成用例统一用 :func:`db_run` 在**独立事件循环**中执行：
 engine 是进程级单例，跨事件循环复用会出问题，因此每次用完整轮次都释放连接池。
@@ -8,18 +8,25 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import shutil
 import sys
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
 from pathlib import Path
 from typing import Any, TypeVar
 
 import httpx
 import pytest
+from sqlalchemy import text
 
 from app.clients.approval_client import ApprovalSystemClient
 from app.core.config import Settings, get_settings
 from app.core.enums import ParseMode
-from app.db.session import check_connection, dispose_engine, reset_engine_state
+from app.db.session import (
+    check_connection,
+    dispose_engine,
+    reset_engine_state,
+    session_scope,
+)
 from app.llm.null import NullLLMClient
 from app.modules.parser.fields import extract_fields
 from app.modules.parser.models import ParsedDocument, TextBlock
@@ -53,6 +60,52 @@ def db_run(factory: Callable[[], Awaitable[T]]) -> T:
 def db_runner() -> Callable[[Callable[[], Awaitable[T]]], T]:
     """把 async 查询函数交给它执行，自动处理事件循环与连接池释放。"""
     return db_run
+
+
+async def _truncate_business_tables() -> None:
+    async with session_scope() as session:
+        for table in (
+            "comment_logs",
+            "review_results",
+            "rule_hits",
+            "contract_parses",
+            "approval_attachments",
+            "task_logs",
+            "approval_tasks",
+        ):
+            await session.execute(text(f"DELETE FROM {table}"))
+        await session.commit()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def reset_business_data() -> Iterator[None]:
+    """整个测试会话开始前清空业务数据（并清掉附件落盘目录）。
+
+    **为什么必须做**：测试会真实写库。若不清空，上一轮运行留下的状态会让本轮断言失效——
+    例如上一轮把 AP-004 重试成了 ``done``，本轮"附件缺失应当 blocked"就永远不成立
+    （任务处于终态时按 ST-01-03 不回退，这是**正确行为**，错的是测试前提）。
+    这类跨轮污染排查起来很费时间，比"清掉开发库数据"危险得多。
+
+    数据随时可由 ``POST /api/tasks/pull`` + 解析重建；``.env`` 指向的就是开发库。
+    MySQL 未就绪时本夹具不做任何事（相关用例会自动跳过）。
+    """
+
+    async def _probe() -> bool:
+        try:
+            return (await check_connection())[0]
+        finally:
+            await dispose_engine()
+
+    reset_engine_state()
+    available = asyncio.run(_probe())
+    if available:
+        db_run(_truncate_business_tables)
+        settings = get_settings()
+        if settings.storage_path.exists():
+            for child in settings.storage_path.iterdir():
+                if child.is_dir():
+                    shutil.rmtree(child, ignore_errors=True)
+    yield
 
 
 @pytest.fixture(scope="session")

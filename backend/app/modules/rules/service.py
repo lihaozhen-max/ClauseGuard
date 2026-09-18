@@ -22,6 +22,10 @@ from app.core.timeutil import format_duration
 from app.db.models import ApprovalTask, ContractParse, ReviewRule, RuleHit
 from app.llm.base import LLMClient
 from app.llm.factory import build_llm_client
+from app.modules.approval.state import (
+    BLOCKED_STAGE_REVIEWING,
+    fail_and_block,
+)
 from app.modules.logging.service import write_task_log
 from app.modules.parser.models import ParsedDocument
 from app.modules.review.summary import build_template_focus_points, build_template_summary
@@ -162,41 +166,61 @@ async def run_rules_for_task(
             detail={"case_id": task_id},
         )
 
-    document = ParsedDocument.from_stored(
-        parse_row.full_text, parse_row.page_map_json, parse_row.parse_mode
-    )
-    ctx = RuleContext.build(
-        document=document,
-        basic_info=list(parse_row.basic_info_json or []),
-        clause_info=list(parse_row.clause_info_json or []),
-        settings=settings,
-        llm=llm or build_llm_client(settings),
-    )
-
-    rules = await load_enabled_rules(session)
-    evaluated: list[EvaluatedRule] = []
-    warnings: list[str] = []
-    for rule in rules:
-        item = await _evaluate_rule(ctx, rule)
-        if item.error:
-            warnings.append(f"{item.rule_code}：{item.error}")
-        evaluated.append(item)
-
-    # FR-RULE-07：按 (task_id, rule_id) upsert，重复执行覆盖旧命中，不产生重复行
-    for item in evaluated:
-        values = item.to_hit_row(task_id)
-        statement = mysql_insert(RuleHit.__table__).values(**values)
-        await session.execute(
-            statement.on_duplicate_key_update(
-                risk_level=values["risk_level"],
-                evidence_text=values["evidence_text"],
-                evidence_position=values["evidence_position"],
-                suggestion_text=values["suggestion_text"],
-                hit_source=values["hit_source"],
-                hit_status=values["hit_status"],
-            )
+    try:
+        document = ParsedDocument.from_stored(
+            parse_row.full_text, parse_row.page_map_json, parse_row.parse_mode
         )
-    await session.flush()
+        ctx = RuleContext.build(
+            document=document,
+            basic_info=list(parse_row.basic_info_json or []),
+            clause_info=list(parse_row.clause_info_json or []),
+            settings=settings,
+            llm=llm or build_llm_client(settings),
+        )
+
+        rules = await load_enabled_rules(session)
+        evaluated: list[EvaluatedRule] = []
+        warnings: list[str] = []
+        for rule in rules:
+            item = await _evaluate_rule(ctx, rule)
+            if item.error:
+                warnings.append(f"{item.rule_code}：{item.error}")
+            evaluated.append(item)
+
+        # FR-RULE-07：按 (task_id, rule_id) upsert，重复执行覆盖旧命中，不产生重复行
+        for item in evaluated:
+            values = item.to_hit_row(task_id)
+            statement = mysql_insert(RuleHit.__table__).values(**values)
+            await session.execute(
+                statement.on_duplicate_key_update(
+                    risk_level=values["risk_level"],
+                    evidence_text=values["evidence_text"],
+                    evidence_position=values["evidence_position"],
+                    suggestion_text=values["suggestion_text"],
+                    hit_source=values["hit_source"],
+                    hit_status=values["hit_status"],
+                )
+            )
+        await session.flush()
+    except AppError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        # FR-RULE-11：规则执行**阶段**异常（非单条规则异常）→ 任务 blocked / reviewing。
+        # 单条规则自身的异常已由 _evaluate_rule 兜住并记 uncertain（FR-RULE-06），不会走到这里。
+        error = AppError(
+            ErrorCode.RULE_EXECUTION_FAILED,
+            f"规则执行阶段异常：{type(exc).__name__}: {exc}",
+            task_id=task_id,
+        )
+        await fail_and_block(
+            session,
+            task,
+            stage=BLOCKED_STAGE_REVIEWING,
+            error_code=ErrorCode.RULE_EXECUTION_FAILED,
+            log_type=LogType.RULE,
+            message=error.message,
+        )
+        raise error from exc
 
     counts = count_by_status([item.outcome for item in evaluated])
     overall = aggregate_overall_risk(

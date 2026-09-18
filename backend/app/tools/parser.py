@@ -14,10 +14,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.clients.approval_client import ApprovalSystemClient
+from app.core.enums import LogType
 from app.core.errors import AppError, ErrorCode
 from app.db.models import ApprovalAttachment, ApprovalTask, ContractParse
 from app.db.session import session_scope
 from app.modules.approval.service import fetch_approval_detail
+from app.modules.approval.state import BLOCKED_STAGE_PARSING, fail_and_block
 from app.modules.attachment.service import download_attachment, list_task_attachments
 from app.modules.parser.service import ParseOutcome, parse_attachment
 from app.schemas.approval import ApprovalDetail
@@ -123,7 +125,17 @@ async def parse_task(
                 await parse_attachment(session, task, attachment, settings=settings)
                 for attachment in attachments
             ]
-        except AppError:
+        except AppError as error:
+            if error.code is ErrorCode.APPROVAL_API_ERROR:
+                # SPEC §5.4：审批接口异常 → 任务 blocked（当前阶段）；此处仍在解析阶段之前
+                await fail_and_block(
+                    session,
+                    task,
+                    stage=BLOCKED_STAGE_PARSING,
+                    error_code=ErrorCode.APPROVAL_API_ERROR,
+                    log_type=LogType.DOWNLOAD,
+                    message=f"审批接口异常，任务阻塞：{error.message}",
+                )
             await session.commit()
             raise
         await session.commit()

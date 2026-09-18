@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -65,3 +66,43 @@ async def write_task_log(
     }[level_value]
     log_fn("[task=%s][%s] %s", task_id, type_value, safe_content)
     return entry
+
+
+async def list_task_logs(
+    session: AsyncSession,
+    task_id: int,
+    *,
+    log_type: str | None = None,
+    level: str | None = None,
+    page: int = 1,
+    size: int = 50,
+) -> tuple[list[TaskLog], int]:
+    """任务日志查询（IF-19 / AC18）：返回 ``(本页日志, 总数)``。
+
+    可按 ``log_type``、``log_level`` 过滤；按 id 正序返回——按链路顺序阅读最自然。
+    """
+    conditions = [TaskLog.task_id == task_id]
+    if log_type:
+        conditions.append(TaskLog.log_type == log_type)
+    if level:
+        conditions.append(TaskLog.log_level == level)
+
+    total = await session.scalar(select(func.count()).select_from(TaskLog).where(*conditions))
+    rows = (
+        await session.execute(
+            select(TaskLog)
+            .where(*conditions)
+            .order_by(TaskLog.id)
+            .offset((page - 1) * size)
+            .limit(size)
+        )
+    ).scalars().all()
+    return list(rows), int(total or 0)
+
+
+async def collect_log_types(session: AsyncSession, task_id: int) -> set[str]:
+    """该任务出现过的全部 ``log_type``（AC18 核验 8 类核心操作是否齐备）。"""
+    rows = await session.execute(
+        select(TaskLog.log_type).where(TaskLog.task_id == task_id).distinct()
+    )
+    return {str(row[0]) for row in rows}

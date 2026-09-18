@@ -19,6 +19,7 @@
 | `docs/M2-验收记录.md` | CG-M2-001 | M2 附件下载 + 解析 + OCR + 字段提取的验证证据与决策记录 |
 | `docs/M3-验收记录.md` | CG-M3-001 | M3 规则引擎 + 11 条规则 + 风险汇总 + 证据定位的验证证据与决策记录 |
 | `docs/M4-验收记录.md` | CG-M4-001 | M4 摘要/关注点 + 结果入库 + 评论回写的验证证据与决策记录 |
+| `docs/M5-验收记录.md` | CG-M5-001 | M5 异常阻塞 + 人工重试 + 全链路日志的验证证据与决策记录 |
 
 文档冲突时的裁决顺序：用户指令 → PRD → SPEC → 设计文档 → 通用工程习惯（SPEC §0.2）。
 
@@ -162,7 +163,7 @@ uv run pytest -q -m "not slow and not llm"  # 跳过 OCR 与 LLM，约 15 秒
 | **M2** | 附件下载 + 解析（PDF/Word）+ OCR + 字段与条款提取 + 定位 | ✅ **已完成**（`docs/M2-验收记录.md`，AC03–AC07） |
 | **M3** | 规则引擎 + 11 条规则 + 风险汇总 + 证据定位 | ✅ **已完成**（`docs/M3-验收记录.md`，AC08–AC10） |
 | **M4** | 摘要/关注点 + 结果入库 + 评论生成与回写 | ✅ **已完成**（`docs/M4-验收记录.md`，AC11–AC15） |
-| M5 | `blocked` 状态 + 人工重试 + 全链路日志 | ⏳ |
+| **M5** | `blocked` 状态 + 人工重试 + 全链路日志 | ✅ **已完成**（`docs/M5-验收记录.md`，AC16–AC18） |
 | M6 | 前端五个模块 + 规则维护 + 日志页 | ⏳ |
 | M7 | 闭环演示 + 测试 + 截图 + 文档与交付整理 | ⏳ |
 
@@ -216,4 +217,10 @@ POST /api/tasks/pull           ① 拉取待办（按 instance_id 去重）
 POST /api/tasks/{id}/parse     ②③④⑤ 下载附件 + 解析 + 16 字段提取
 POST /api/tasks/{id}/review    ⑥⑦⑧ 规则审查 + 摘要/关注点 + 评论生成 + 结果入库（→ done）
 POST /api/tasks/{id}/write-comment  ⑨ 写回审批系统评论区（幂等）
+GET  /api/tasks/{id}/logs       全链路日志（8 类核心操作，可按 log_type/level 过滤）
+POST /api/tasks/{id}/retry      仅对 blocked 任务：从失败阶段重入并继续跑到 done
 ```
+
+任一阶段不可恢复失败时任务进入 `blocked` 并记录 `blocked_stage` + `error_code`，
+任务日志同时落库（`pull`/`download`/`parse`/`ocr`/`extract`/`rule`/`save`/`write_comment`/`retry`）；
+排除故障后调 `retry` 即可续跑，`retry_count` 累加（ST-01-02 / ST-01-03 / AC16–AC18）。

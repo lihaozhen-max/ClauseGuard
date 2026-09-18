@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_approval_client, get_llm_client
 from app.clients.approval_client import ApprovalSystemClient
-from app.core.enums import TaskStatus
+from app.core.enums import LogLevel, LogType, TaskStatus
 from app.core.errors import AppError, ErrorCode
 from app.core.security import require_api_key
 from app.db.models import ApprovalTask
@@ -29,6 +29,7 @@ from app.db.session import get_session, session_scope
 from app.llm.base import LLMClient
 from app.modules.approval.service import get_local_task, list_local_tasks
 from app.modules.comment.service import list_comment_logs
+from app.modules.logging.service import collect_log_types, list_task_logs
 from app.modules.parser.service import get_parse_row, row_to_outcome
 from app.modules.review.service import get_review_result as get_review_result_row
 from app.modules.review.summary import build_template_focus_points, build_template_summary
@@ -43,6 +44,7 @@ from app.schemas.approval import (
     TaskListItem,
     TaskListResponse,
 )
+from app.schemas.log import RetryResponse, TaskLogList, TaskLogModel
 from app.schemas.parse import ParseResultResponse
 from app.schemas.review import (
     CommentLogList,
@@ -54,6 +56,7 @@ from app.schemas.review import (
 from app.tools.approval import get_contract_approval, list_pending_contract_approvals
 from app.tools.comment import write_approval_comment
 from app.tools.parser import parse_task
+from app.tools.retry import retry_task
 from app.tools.review import run_full_review
 
 router = APIRouter(prefix="/api", tags=["任务"], dependencies=[Depends(require_api_key)])
@@ -387,3 +390,68 @@ async def get_comment_logs(
         ],
         total=len(rows),
     )
+
+
+@router.get("/tasks/{task_id}/logs", response_model=TaskLogList, summary="IF-19 任务日志")
+async def get_task_logs(
+    task_id: int,
+    log_type: LogType | None = Query(default=None, description="按 log_type 过滤"),
+    level: LogLevel | None = Query(default=None, description="按 log_level 过滤"),
+    page: int = Query(default=1, ge=1),
+    size: int = Query(default=50, ge=1, le=200),
+    session: AsyncSession = Depends(get_session),
+) -> TaskLogList:
+    """查询任务全链路日志（8 类核心操作，FR-LOG-01 / AC18）。
+
+    ``log_types`` 直接给出该任务出现过的全部日志类型，便于核对 8 类是否齐备。
+    """
+    task = await get_local_task(session, task_id)
+    if task is None:
+        raise AppError(
+            ErrorCode.APPROVAL_NOT_FOUND,
+            f"任务 {task_id} 不存在",
+            task_id=task_id,
+            detail={"task_id": task_id},
+        )
+
+    rows, total = await list_task_logs(
+        session,
+        task_id,
+        log_type=log_type.value if log_type else None,
+        level=level.value if level else None,
+        page=page,
+        size=size,
+    )
+    kinds = await collect_log_types(session, task_id)
+    return TaskLogList(
+        items=[
+            TaskLogModel(
+                id=row.id,
+                task_id=row.task_id,
+                log_level=row.log_level,
+                log_type=row.log_type,
+                log_content=row.log_content,
+                created_at=row.created_at,
+            )
+            for row in rows
+        ],
+        total=total,
+        page=page,
+        size=size,
+        log_types=sorted(kinds),
+    )
+
+
+@router.post("/tasks/{task_id}/retry", response_model=RetryResponse, summary="IF-20 人工重试")
+async def retry_blocked_task(
+    task_id: int,
+    client: ApprovalSystemClient = Depends(get_approval_client),
+    llm: LLMClient = Depends(get_llm_client),
+) -> RetryResponse:
+    """从失败阶段重试 ``blocked`` 任务，并继续跑到完成（IF-20 / AC17）。
+
+    - 任务不处于 ``blocked`` → ``422 VALIDATION_ERROR``（无需重试）
+    - 重试过程中再次失败 → 任务重新 ``blocked``，错误照常返回
+    """
+    outcome = await retry_task(task_id, client=client, llm=llm)
+    return RetryResponse(**outcome.to_dict())
