@@ -245,6 +245,11 @@ powershell -ExecutionPolicy Bypass -File scripts/dev_down.ps1    # 只停本项�
 AP-001/AP-002 文本型 PDF、AP-003 扫描件 PNG、AP-004 附件缺失、AP-005 空文件。
 重新生成：`uv run --project backend python sample_contracts/generate_samples.py`。
 
+**另有 4 份给你自己测着玩的合同**（`sample_contracts/extra/`）：T-01「坏合同」一次打中 8 条规则、
+T-02「好合同」零命中对照组、T-03 是 Word 且专打 R009、T-04 主体与金额缺失。
+每份的预期结果、以及测试方法（含一键工具 `scripts/try_contract.py`）见
+`sample_contracts/extra/README.md`。
+
 ## OCR 环境须知（重要）
 
 扫描件识别走本地 PaddleOCR，有两个**必须满足**的环境条件（详见 `docs/M2-验收记录.md` §3.1/§3.2）：
