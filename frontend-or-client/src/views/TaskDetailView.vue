@@ -16,6 +16,7 @@
 import { computed } from 'vue'
 
 import { useTaskContext } from '../composables/taskContext'
+import { useIsNarrow } from '../composables/useViewport'
 import {
   downloadStatusLabel,
   downloadStatusTag,
@@ -26,6 +27,11 @@ import {
 } from '../utils/labels'
 
 const { task, approval, approvalError } = useTaskContext()
+
+/** 窄屏下描述列表由 3 列降到 1 列，否则每一格都被挤到换行。 */
+const { narrow } = useIsNarrow()
+const columns = computed(() => (narrow.value ? 1 : 3))
+const formColumns = computed(() => (narrow.value ? 1 : 2))
 
 /** 表单数据优先用审批系统的实时值；拿不到时用本系统缓存的那份。 */
 const formEntries = computed<Array<[string, string]>>(() => {
@@ -53,7 +59,7 @@ const contractType = computed(
 
     <div class="card">
       <h3 class="card-title">审批基本信息</h3>
-      <el-descriptions :column="3" border size="small">
+      <el-descriptions :column="columns" border size="small">
         <el-descriptions-item label="审批实例">{{ task.instance_id }}</el-descriptions-item>
         <el-descriptions-item label="审批编号">{{ task.approval_code }}</el-descriptions-item>
         <el-descriptions-item label="申请人">{{ task.applicant_name }}</el-descriptions-item>
@@ -86,7 +92,7 @@ const contractType = computed(
         description="暂无表单数据：审批系统未返回，且本任务尚未走「详情」步骤"
         :image-size="60"
       />
-      <el-descriptions v-else :column="2" border size="small">
+      <el-descriptions v-else :column="formColumns" border size="small">
         <el-descriptions-item v-for="[key, value] in formEntries" :key="key" :label="key">
           <span style="white-space: pre-wrap">{{ value }}</span>
         </el-descriptions-item>

@@ -183,3 +183,53 @@ body {
   flex-wrap: wrap;
   gap: 6px;
 }
+
+/* ── 窄屏（<1100px）：把空间让给表格，避免横向溢出 ──────────────────
+   定宽列（el-table-column 的 width）在窄屏下靠 el-table 自带的横向滚动条兜住，
+   这里只负责收边距、缩小字号，并保证外壳本身不产生横向滚动。 */
+@media (max-width: 1099px) {
+  .app-main {
+    padding: 10px;
+    overflow-x: hidden;
+  }
+
+  .app-header {
+    padding: 0 12px;
+  }
+
+  .app-header .brand-mark {
+    font-size: 16px;
+  }
+
+  .card {
+    padding: 12px;
+  }
+
+  .card-title {
+    font-size: 14px;
+  }
+
+  .risk-badge {
+    padding: 8px 14px;
+    font-size: 16px;
+  }
+
+  .pre-block,
+  .evidence {
+    font-size: 12px;
+  }
+
+  .toolbar {
+    gap: 8px;
+  }
+
+  /* 表格本身保持可横向滚动，但不撑破外层卡片 */
+  .card .el-table {
+    max-width: 100%;
+  }
+
+  .el-pagination {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+}

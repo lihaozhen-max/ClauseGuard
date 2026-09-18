@@ -285,3 +285,49 @@ def test_no_api_key_dialog_blocks_nothing_when_key_present(page: Any) -> None:
     started = time.perf_counter()
     assert page.wait_for_text("待办调用", timeout=15)
     assert time.perf_counter() - started < 15
+
+
+# ── 窄屏适配（加固轮）─────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(("width", "height"), [(1024, 768), (800, 900)])
+def test_narrow_viewport_has_no_horizontal_overflow(page: Any, width: int, height: int) -> None:
+    """窄屏下不能出现横向滚动条：外壳/侧栏/表格都得收进视口。
+
+    这是"能用/不能用"的硬边界——内网里把窗口拖窄、或在 1024 的投影仪上演示是常态。
+    """
+    task_id = _task_id("AP-001")
+    page.set_viewport(width, height)
+    try:
+        for path, marker in (
+            ("/tasks", "待办调用"),
+            (f"/tasks/{task_id}/detail", "审批基本信息"),
+            ("/rules", "规则维护"),
+        ):
+            page.navigate(f"{WEB_URL}{path}", settle=1.2)
+            assert page.wait_for_text(marker, timeout=30), f"{path} 在 {width}px 下没有渲染出来"
+
+            overflow = page.eval("document.documentElement.scrollWidth - window.innerWidth")
+            assert isinstance(overflow, (int, float)) and overflow <= 2, (
+                f"{path} 在 {width}px 视口下横向溢出 {overflow}px"
+            )
+
+            aside = page.eval(
+                "(() => {const n=document.querySelector('.app-aside');"
+                " return n ? Math.round(n.getBoundingClientRect().width) : -1})()"
+            )
+            assert isinstance(aside, (int, float)) and aside <= 70, (
+                f"{path} 在 {width}px 下侧栏应折叠成图标条，实际 {aside}px"
+            )
+
+            # 表格允许自己横向滚动，但不能把外层卡片撑破
+            table_overflow = page.eval(
+                "(() => {const t=document.querySelector('.card .el-table');"
+                " if(!t) return 0;"
+                " return Math.round(t.getBoundingClientRect().right - window.innerWidth)})()"
+            )
+            assert isinstance(table_overflow, (int, float)) and table_overflow <= 2, (
+                f"{path} 在 {width}px 下表格超出视口 {table_overflow}px"
+            )
+    finally:
+        page.clear_viewport()

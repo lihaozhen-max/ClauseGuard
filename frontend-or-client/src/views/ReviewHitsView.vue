@@ -13,6 +13,7 @@ import { ApiError, describeError } from '../api/client'
 import { getReviewResult, triggerReview } from '../api/tasks'
 import type { ReviewPipelineResponse, RuleHit } from '../api/types'
 import { useTaskContext } from '../composables/taskContext'
+import { useIsNarrow } from '../composables/useViewport'
 import {
   formatTime,
   hitSourceLabel,
@@ -24,6 +25,9 @@ import {
 } from '../utils/labels'
 
 const { taskId, task, reload: reloadTask } = useTaskContext()
+const { narrow } = useIsNarrow()
+/** 窄屏下统计块从竖排改成横排，避免与风险徽标挤在一起。 */
+const statsColumns = computed(() => (narrow.value ? 3 : 1))
 
 type HitFilter = 'all' | 'hit' | 'risk'
 
@@ -115,7 +119,7 @@ watch(taskId, load)
           <div :class="['risk-badge', riskLevelClass(result.overall_risk_level)]">
             整体风险：{{ riskLevelLabel(result.overall_risk_level) }}
           </div>
-          <el-descriptions :column="1" size="small" border style="min-width: 220px">
+          <el-descriptions :column="statsColumns" size="small" border style="min-width: 220px">
             <el-descriptions-item label="命中风险数">{{ result.hit_count }}</el-descriptions-item>
             <el-descriptions-item label="待人工确认">{{ result.uncertain_count }}</el-descriptions-item>
             <el-descriptions-item label="已评估规则数">{{ result.evaluated_rules }}</el-descriptions-item>

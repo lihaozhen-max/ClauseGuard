@@ -327,3 +327,20 @@ class Page:
             "Page.captureScreenshot", {"format": "png"}, session_id=self.session_id
         )
         Path(path).write_bytes(_b64.b64decode(result["data"]))
+
+    def set_viewport(self, width: int, height: int) -> None:
+        """覆盖视口尺寸（等价于改窗口大小，但不用重启浏览器）。
+
+        窄屏适配用例靠它把视口切到 1024/800，再断言"没有横向溢出"。
+        """
+        self.ws.call(
+            "Emulation.setDeviceMetricsOverride",
+            {"width": width, "height": height, "deviceScaleFactor": 1, "mobile": False},
+            session_id=self.session_id,
+        )
+        time.sleep(0.3)
+
+    def clear_viewport(self) -> None:
+        """撤销 :meth:`set_viewport` 的覆盖，恢复真实窗口尺寸。"""
+        self.ws.call("Emulation.clearDeviceMetricsOverride", session_id=self.session_id)
+        time.sleep(0.3)

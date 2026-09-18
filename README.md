@@ -60,6 +60,15 @@ ClauseGuard/
 
 ## 快速开始
 
+### 0. 环境预检（推荐先跑一次）
+
+```powershell
+uv run --project backend python scripts/preflight.py
+```
+
+只读检查 Python / uv / Node / Docker / MySQL / `.env` / 样例 / 端口 / 表与规则种子，
+逐条给出"缺什么、怎么补"，退出码 0/1（可直接用于交付自检）。**不打印任何密钥**。
+
 ### 1. 前置条件
 
 - Python 3.13（推荐 uv 托管：`uv python install 3.13`）
@@ -179,12 +188,27 @@ uv run --project backend python scripts/demo_closed_loop.py --reset --all
 ### 10. 性能基线（可选）
 
 ```powershell
-uv run --project backend python scripts/bench.py --repeat 10 --concurrency 8
+uv run --project backend python scripts/bench.py --repeat 10 --concurrency 8   # 接口侧
+uv run --project backend python scripts/bench_ui.py                            # 页面渲染侧
 ```
 
-测接口耗时基线、1000 条任务 / 5000 行日志下的响应、8 路并发表现，并给出结论。
-合成数据以 `BENCH-xxxxx` 标记，**测完自动删除**。实测结论见 `docs/M7-验收记录.md` §7.3
-（读接口 30–75ms、写接口 90–190ms；`review` 的耗时 ~97% 在 LLM：开 5.46s / 关 0.16s）。
+`bench.py` 测接口耗时、1000 条任务 / 5000 行日志下的响应、8 路并发表现；
+`bench_ui.py` 用真实 Chrome 测"导航 → 目标行数出现在 DOM"的渲染耗时（5 → 1005 条任务）。
+两者的合成数据都以 `BENCH-xxxxx` 标记，**测完自动删除**。
+实测结论见 `docs/M7-验收记录.md` §7.3/§7.8。
+
+### 11. 一键起停（Windows，可选）
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/dev_up.ps1      # 起 MySQL + 8000 + 8100 + 5173
+powershell -ExecutionPolicy Bypass -File scripts/dev_status.ps1  # 看状态
+powershell -ExecutionPolicy Bypass -File scripts/dev_down.ps1    # 只停本项目进程（不碰 Docker）
+```
+
+日志写到 `_logs/`（已被 `.gitignore` 忽略）。
+注意：**后端首次冷启动要导入 Paddle 等重依赖，可能要 1–4 分钟**；
+`dev_up.ps1` 若提示"健康检查未通过"，先用 `dev_status.ps1` 再确认一次。
+这些脚本必须是 **UTF-8 with BOM**（PowerShell 5.1 会按 ANSI 解码无 BOM 的 `.ps1`）。
 
 ## 端口约定
 
