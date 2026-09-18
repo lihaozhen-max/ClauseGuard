@@ -45,4 +45,5 @@ markers = [
     "mock: 针对模拟审批系统（mock-approval-system）的用例",
     "slow: 需要真实 OCR 推理（单页约 60s）的用例，迭代时可用 -m \"not slow\" 跳过",
     "llm: 需要真实调用 LLM 端点的用例（无 Key 时自动跳过），迭代时可用 -m \"not llm\" 跳过",
+    "ui: 需要本机 Chrome/Edge + 工具服务(8000) + 调用端 dev server(5173) 的浏览器端到端用例，三者缺一即自动跳过；迭代时可用 -m \"not ui\" 跳过",
 ]

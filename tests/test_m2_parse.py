@@ -290,6 +290,23 @@ async def _task_of(instance_id: str) -> ApprovalTask | None:
     return task
 
 
+@pytest.fixture(scope="module", autouse=True)
+def _pulled(db_runner, mock_app):
+    """确保 AP-001…AP-005 都已拉取为任务。
+
+    集成用例不能假设"别的文件先跑过、顺手把待办拉下来了"——那样
+    ``pytest -k test_parse_text_pdf_end_to_end_ac04`` 之类的单点运行就会失败。
+    """
+    import httpx
+
+    from app.clients.approval_client import ApprovalSystemClient
+
+    from app.tools.approval import list_pending_contract_approvals
+
+    client = ApprovalSystemClient(transport=httpx.ASGITransport(app=mock_app))
+    db_runner(lambda: list_pending_contract_approvals(20, client=client))
+
+
 @pytest.mark.requires_db
 def test_parse_text_pdf_end_to_end_ac04(live_db: str, db_runner, approval_client) -> None:
     """AC04：用 AP-001（文本型 PDF）解析 → parse_status=success，16 个字段全部产出 FieldRecord。"""

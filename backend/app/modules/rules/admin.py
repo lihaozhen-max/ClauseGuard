@@ -18,6 +18,7 @@ from __future__ import annotations
 from typing import Any
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import RuleStatus
@@ -27,6 +28,16 @@ from app.db.models import ReviewRule
 from app.schemas.rule import RuleCreateRequest, RuleModel, RuleUpdateRequest
 
 logger = get_logger(__name__)
+
+#: MySQL 唯一键冲突
+_DUPLICATE_ENTRY = 1062
+
+
+def _is_duplicate_key(exc: IntegrityError) -> bool:
+    """判断是否 MySQL 1062（唯一键冲突）。"""
+    orig = getattr(exc, "orig", None)
+    args = getattr(orig, "args", ()) or ()
+    return bool(args) and args[0] == _DUPLICATE_ENTRY
 
 
 def to_rule_model(rule: ReviewRule) -> RuleModel:
@@ -94,7 +105,13 @@ async def _assert_code_available(
 
 
 async def create_rule(session: AsyncSession, payload: RuleCreateRequest) -> ReviewRule:
-    """新增规则（IF-21 ``POST``）。"""
+    """新增规则（IF-21 ``POST``）。
+
+    并发口径与待办拉取一致（``modules/approval/service.py``）：
+    ``_assert_code_available`` 只提供**可读的**冲突信息，**唯一索引才是最终保障**。
+    两个请求同时通过预检查时，后提交者会撞上 ``uk_review_rules_rule_code``，
+    此处把它翻译成 422 ``VALIDATION_ERROR``——而不是让 ``IntegrityError`` 冒泡成 500。
+    """
     await _assert_code_available(session, payload.rule_code)
     rule = ReviewRule(
         rule_code=payload.rule_code,
@@ -108,7 +125,19 @@ async def create_rule(session: AsyncSession, payload: RuleCreateRequest) -> Revi
         target_section=payload.target_section,
     )
     session.add(rule)
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError as exc:
+        # 本函数的调用方只做这一件事，因此回滚整个会话是安全的
+        await session.rollback()
+        if _is_duplicate_key(exc):
+            logger.warning("规则编码并发冲突，已拒绝：rule_code=%s", payload.rule_code)
+            raise AppError(
+                ErrorCode.VALIDATION_ERROR,
+                f"规则编码 {payload.rule_code} 已存在",
+                detail={"rule_code": payload.rule_code, "reason": "并发写入触发唯一索引"},
+            ) from exc
+        raise
     await session.refresh(rule)
     logger.info("新增规则 %s（%s，%s）", rule.rule_code, rule.rule_name, rule.risk_level)
     return rule

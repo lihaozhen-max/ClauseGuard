@@ -63,6 +63,22 @@ async def _task_of(instance_id: str) -> ApprovalTask | None:
     return task
 
 
+@pytest.fixture(scope="module", autouse=True)
+def _pulled(db_runner, mock_app):
+    """确保样例审批单已拉取为任务。
+
+    ``-m slow`` / ``-k test_scan_image_goes_through_ocr_ac05`` 单点运行时不经过别的文件，
+    必须自己把前置数据建起来（实测单跑会因 AP-003 任务不存在而失败）。
+    """
+    import httpx
+
+    from app.clients.approval_client import ApprovalSystemClient
+    from app.tools.approval import list_pending_contract_approvals
+
+    client = ApprovalSystemClient(transport=httpx.ASGITransport(app=mock_app))
+    db_runner(lambda: list_pending_contract_approvals(20, client=client))
+
+
 @pytest.mark.requires_db
 @pytest.mark.slow
 def test_scan_image_goes_through_ocr_ac05(live_db: str, db_runner, approval_client) -> None:

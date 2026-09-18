@@ -134,14 +134,18 @@ curl -X POST http://127.0.0.1:8000/api/tasks/pull -H "X-API-Key: <INTERNAL_API_K
 
 ```powershell
 cd ClauseGuard/backend
-uv run pytest -q                          # 全量（含真实 OCR 推理 + 真实 LLM 冒烟，约 2~4 分钟）
+uv run pytest -q                          # 全量（含真实 OCR 推理；另含浏览器端到端，见下）
 uv run pytest -q -m "not slow and not llm"  # 跳过 OCR 与 LLM，约 15 秒
+uv run pytest -q -m "not ui"              # 跳过浏览器端到端（需要用 Chrome 时再开）
+uv run pytest -q -m ui                    # 只跑浏览器端到端（需 8000 + 5173 已在跑）
 ```
 
 - 纯配置、字段抽取、规则判定用例无需数据库，也无需启动模拟审批系统；
 - 集成用例在 MySQL 未就绪时**自动跳过**（不伪造通过）；
 - 待办拉取用例通过 ASGI 内存传输直连模拟审批系统，不必先启动 8100 进程；
-- 标记说明：`slow` = 真实 OCR 推理；`llm` = 真实 LLM 端点调用（无 Key 时自动跳过）。
+- 标记说明：`slow` = 真实 OCR 推理；`llm` = 真实 LLM 端点调用（无 Key 时自动跳过）；
+  `ui` = 浏览器端到端（**本机 Chrome/Edge + 工具服务 8000 + 调用端 5173 三者齐备才跑**，
+  否则自动跳过；它用零依赖的 CDP 客户端真实点击界面，见 `tests/_cdp_client.py`）。
 
 ### 8. 启动调用端（前端，端口 5173；另开一个终端）
 
@@ -171,6 +175,16 @@ uv run --project backend python scripts/demo_closed_loop.py --reset --all
 脚本对着**真实运行的服务**把九步闭环（AP-001）与"附件缺失 → 补齐 → 人工重试"（AP-004）
 各跑一遍，逐条打印判据实测值并给出 `演示结果：N/N 项判据通过`。
 现场演示的完整脚本见 `docs/演示说明.md`，逐条 AC 的证据索引见 `docs/验收对照表.md`。
+
+### 10. 性能基线（可选）
+
+```powershell
+uv run --project backend python scripts/bench.py --repeat 10 --concurrency 8
+```
+
+测接口耗时基线、1000 条任务 / 5000 行日志下的响应、8 路并发表现，并给出结论。
+合成数据以 `BENCH-xxxxx` 标记，**测完自动删除**。实测结论见 `docs/M7-验收记录.md` §7.3
+（读接口 30–75ms、写接口 90–190ms；`review` 的耗时 ~97% 在 LLM：开 5.46s / 关 0.16s）。
 
 ## 端口约定
 

@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.clients.approval_client import ApprovalSystemClient
@@ -132,17 +133,54 @@ async def write_approval_comment(
             detail={"review_id": review.id, "reason": reason},
         )
 
-    # ST-02：not_written / failed → writing（success 已在上面短路）
-    if existing is None:
-        row = CommentLog(
+    # ST-02：not_written / failed → writing（success 已在上面短路）。
+    #
+    # 并发口径（加固轮）：唯一索引是最终保障（DT-00-05），因此这里用
+    # ``INSERT ... ON DUPLICATE KEY UPDATE`` **原子地**确保"一行逻辑评论"存在，
+    # 而不是"先查再插"——后者在并发下会撞 ``uk_comment_logs_idempotency_key``，
+    # 把一次正常的重复点击变成 500。写法与 ``modules/approval/service.py`` 的拉取去重一致。
+    await session.execute(
+        mysql_insert(CommentLog.__table__)
+        .values(
             task_id=task.id,
             write_status=WriteStatus.WRITING.value,
             idempotency_key=key,
         )
-        session.add(row)
-    else:
-        row = existing
-        row.write_status = WriteStatus.WRITING.value
+        # 置为自身 = 不做实际修改，只为拿到该行的锁并保证行存在
+        .on_duplicate_key_update(write_status=CommentLog.__table__.c.write_status)
+    )
+    # 用**加锁读**取权威状态：REPEATABLE READ 下普通读会命中事务开始时的快照，
+    # 看不到并发事务刚提交的 success（M1 在拉取路径上踩过同一个坑）。
+    row = await session.scalar(
+        select(CommentLog).where(CommentLog.idempotency_key == key).with_for_update()
+    )
+    if row is None:  # 理论上不会发生（上一条语句已保证行存在）
+        raise AppError(
+            ErrorCode.INTERNAL_ERROR,
+            f"评论记录写入后回读失败：{key[:16]}…",
+            task_id=task.id,
+            detail={"review_id": review.id},
+        )
+
+    if row.write_status == WriteStatus.SUCCESS.value:
+        # 竞态：在我们拿到行之前，另一个并发调用已经回写成功 → 直接返回既有结果
+        task.write_status = WriteStatus.SUCCESS.value
+        await session.flush()
+        await _append_log(
+            session,
+            task,
+            f"评论已由并发调用回写成功，直接返回既有结果（duplicate=true，remark_id={row.remark_id}）",
+        )
+        return CommentWriteResult(
+            task_id=task.id,
+            review_id=review.id,
+            write_status=WriteStatus.SUCCESS.value,
+            remark_id=row.remark_id,
+            write_response_text=row.write_response_text,
+            duplicate=True,
+        )
+
+    row.write_status = WriteStatus.WRITING.value
     task.write_status = WriteStatus.WRITING.value
     await session.flush()
     await _append_log(
