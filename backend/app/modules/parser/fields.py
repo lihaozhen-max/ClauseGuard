@@ -314,8 +314,8 @@ _BASIC_EXTRACTORS: dict[str, Callable[[ParsedDocument], FieldCandidate | None]] 
 # ── 条款识别（PS-09）─────────────────────────────────────────────────────
 
 
-def clause_heading_index(document: ParsedDocument) -> dict[int, str]:
-    """返回 ``段落下标 → 命中该段的条款字段名``（一个段落至多算一个条款起点）。
+def clause_heading_index(document: ParsedDocument) -> dict[int, tuple[str, ...]]:
+    """返回 ``段落下标 → 命中该段的条款字段名``（**一个段落可以同时属于多个条款**）。
 
     标题判定分两档（顺序敏感）：
 
@@ -331,9 +331,16 @@ def clause_heading_index(document: ParsedDocument) -> dict[int, str]:
     - 排除以 ``。！？；`` 结尾的句子：正文短句
       "验收合格后120日内支付尾款。" 同样含"验收"，若当标题会把**上一条**（付款）
       的正文截断，使 R002 之类的规则读不到账期（实测踩过）。
+
+    **为什么值是一个元组**：真实合同常把两件事合并成一个标题，例如
+    "第五条  交付与验收"。早期实现一个标题只归**一个**字段（按词表顺序先命中者得），
+    "交付"抢走标题后 ``acceptance_clause`` 拿不到区间 → 该字段提取状态变 ``missing``
+    → R011 直接判"合同未约定验收条款"（用自查合同 T-03 实测踩到）。
+    现在同一标题命中的所有字段都会记录；每个字段仍取**它最早出现的那个标题**作为起点。
     """
 
-    headings: dict[int, str] = {}
+    headings: dict[int, tuple[str, ...]] = {}
+    assigned: set[str] = set()
     for index, block in enumerate(document.blocks):
         text = block.text.strip()
         is_clause_heading = bool(_CLAUSE_HEADING_RE.match(text))
@@ -344,12 +351,14 @@ def clause_heading_index(document: ParsedDocument) -> dict[int, str]:
         )
         if not (is_clause_heading or is_short_title):
             continue
-        for field, keywords in CLAUSE_KEYWORDS.items():
-            if field in headings.values():
-                continue
-            if any(keyword in text for keyword in keywords):
-                headings[index] = field
-                break
+        matched = tuple(
+            field
+            for field, keywords in CLAUSE_KEYWORDS.items()
+            if field not in assigned and any(keyword in text for keyword in keywords)
+        )
+        if matched:
+            headings[index] = matched
+            assigned.update(matched)
     return headings
 
 
@@ -379,7 +388,7 @@ def extract_clauses(document: ParsedDocument) -> dict[str, FieldRecord]:
     headings = clause_heading_index(document)
     records: dict[str, FieldRecord] = {}
     for field in CLAUSE_FIELDS:
-        start = next((index for index, name in headings.items() if name == field), None)
+        start = next((index for index, names in headings.items() if field in names), None)
         if start is None:
             # 兜底：强关键词出现在正文中（真实合同常不写编号标题）
             keyword = STRONG_SINGLE_KEYWORDS.get(field)

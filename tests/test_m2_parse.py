@@ -176,12 +176,37 @@ def test_clause_list_item_is_not_a_heading() -> None:
         ]
     }
     headings = clause_heading_index(build_doc(doc))
-    assert headings[0] == "payment_clause"
-    assert headings[3] == "acceptance_clause"
+    assert "payment_clause" in headings[0]
+    assert "acceptance_clause" in headings[3]
     basic, clauses, _ = extract_fields(build_doc(doc))
     acceptance = next(r for r in clauses if r.field_name == "acceptance_clause")
     assert acceptance.position == "第1页 第4段"
     assert "第五条" in (acceptance.source_text or "")
+
+
+def test_merged_heading_maps_to_multiple_clauses() -> None:
+    """合并标题必须同时归到两个条款。
+
+    真实合同常写"第五条  交付与验收"这种合并标题。早期实现一个标题只归一个字段
+    （按词表顺序"交付"先命中），``acceptance_clause`` 因此拿不到区间 → 提取 missing
+    → R011 误判"合同未约定验收条款"（用自查合同 T-03 实测踩到）。
+    """
+    doc = {
+        1: [
+            "第五条  交付与验收",
+            "乙方应于生效之日起10个日历日内完成交付。",
+            "甲方应于交付后10个工作日内进行验收，验收标准见附件一。",
+        ]
+    }
+    headings = clause_heading_index(build_doc(doc))
+    assert set(headings[0]) == {"delivery_clause", "acceptance_clause"}
+
+    _, clauses, _ = extract_fields(build_doc(doc))
+    by_name = {r.field_name: r for r in clauses}
+    for field in ("delivery_clause", "acceptance_clause"):
+        assert by_name[field].extract_status == ExtractStatus.SUCCESS.value, field
+        assert by_name[field].position == "第1页 第1段"
+        assert "第五条" in (by_name[field].source_text or "")
 
 
 def test_clause_missing_when_absent() -> None:

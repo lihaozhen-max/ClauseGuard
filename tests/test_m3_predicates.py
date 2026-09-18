@@ -55,7 +55,12 @@ def make_rule(code: str, **overrides: Any) -> SimpleNamespace:
 
 ACCEPTANCE_ELEMENTS = {
     "acceptance_time": [r"\d+\s*(?:个)?\s*(?:工作日|日|天|月|年)内", "期限", "时间"],
-    "acceptance_method": ["方式", "流程", "程序", "书面", "报告", "检测", "抽检", "进行验收"],
+    # 与 database/seed_rules.sql 的 R011 保持一致：早期只认"进行验收"，导致
+    # "甲方组织验收""由甲方验收"这类同样常见的写法被误判为"缺验收方式"
+    "acceptance_method": [
+        "方式", "流程", "程序", "书面", "报告", "检测", "抽检",
+        "进行验收", "组织验收", "验收合格", "验收通过", "核查", r"由[^\n]{0,10}验收",
+    ],
     "acceptance_criteria": ["标准", "指标", "规范", "技术规格", "合格标准"],
 }
 DATA_ELEMENTS = {
@@ -169,6 +174,13 @@ IP_CLEAR = {1: ["第九条  知识产权", "本合同履行过程中形成的全
 IP_UNCLEAR = {1: ["第九条  知识产权", "双方就知识产权归属另行协商确定。"]}
 
 ACCEPTANCE_INCOMPLETE = {1: ["第五条  验收条款", "甲方验收合格后支付剩余款项。"]}
+ACCEPTANCE_ORGANIZED = {
+    1: [
+        "第五条  验收条款",
+        "甲方应在交付后10个工作日内组织验收。",
+        "验收标准为附件二《验收标准与测试用例》所列指标。",
+    ]
+}
 ACCEPTANCE_COMPLETE = {
     1: [
         "第五条  验收条款",
@@ -417,6 +429,16 @@ def test_r011_hit_when_elements_missing(rule_context_factory) -> None:
 
 def test_r011_miss_when_all_three_elements_present(rule_context_factory) -> None:
     outcome = evaluate(rule_acceptance_missing, rule_context_factory(ACCEPTANCE_COMPLETE), "R011")
+    assert outcome.hit_status is HitStatus.MISS
+
+
+def test_r011_miss_when_acceptance_is_organized(rule_context_factory) -> None:
+    """回归：「甲方组织验收」也算写明了验收方式。
+
+    早期词表只认"进行验收"，于是"甲方应在交付后10个工作日内**组织验收**"被误判为
+    缺验收方式 → 一份验收条款写得很清楚的合同被误报高风险（自查合同 T-02 实测踩到）。
+    """
+    outcome = evaluate(rule_acceptance_missing, rule_context_factory(ACCEPTANCE_ORGANIZED), "R011")
     assert outcome.hit_status is HitStatus.MISS
 
 

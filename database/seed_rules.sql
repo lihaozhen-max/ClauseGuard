@@ -110,7 +110,9 @@ VALUES
  JSON_OBJECT('llm_stage', FALSE,
              'required_elements', JSON_OBJECT(
                  'acceptance_time', JSON_ARRAY('\\d+\\s*(?:个)?\\s*(?:工作日|日|天|月|年)内', '期限', '时间'),
-                 'acceptance_method', JSON_ARRAY('方式', '流程', '程序', '书面', '报告', '检测', '抽检', '进行验收'),
+                 'acceptance_method', JSON_ARRAY('方式', '流程', '程序', '书面', '报告', '检测', '抽检',
+                                                 '进行验收', '组织验收', '验收合格', '验收通过', '核查',
+                                                 '由[^\\n]{0,10}验收'),
                  'acceptance_criteria', JSON_ARRAY('标准', '指标', '规范', '技术规格', '合格标准'))),
  '建议补充验收时间、验收方式及验收标准',
  'acceptance')

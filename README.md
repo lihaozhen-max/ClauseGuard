@@ -24,6 +24,7 @@
 | `docs/M7-验收记录.md` | CG-M7-001 | M7 闭环演示 + 测试 + 截图 + 交付整理的验证证据与决策记录 |
 | `docs/演示说明.md` | CG-DEMO-001 | 现场演示 Runbook（起服务、按标签讲、常见提问） |
 | `docs/验收对照表.md` | CG-AC-001 | AC01–AC19 / TS-01–TS-20 → 用例与截图的证据索引 |
+| `docs/错题本.md` | CG-LESSONS-001 | 开发过程中真实犯过的错、以后的规则与交付前检查清单 |
 
 文档冲突时的裁决顺序：用户指令 → PRD → SPEC → 设计文档 → 通用工程习惯（SPEC §0.2）。
 
@@ -100,11 +101,15 @@ docker compose --env-file ../.env ps        # 等待 (healthy)
 > **库里已有数据时**（初始化脚本不会重跑），规则种子需手工灌一次：
 >
 > ```powershell
-> Get-Content database/seed_rules.sql -Raw |
->   docker exec -i clauseguard-mysql mysql -uroot -p<DB_ROOT_PASSWORD> --default-character-set=utf8mb4
+> cmd /c "type database\seed_rules.sql | docker exec -i clauseguard-mysql mysql -uroot -p<DB_ROOT_PASSWORD> --default-character-set=utf8mb4 clauseguard"
 > ```
 >
+> ⚠️ **不要用** `Get-Content ... -Raw | docker exec ...`：Windows PowerShell 5.1 会按 ANSI 解码
+> **无 BOM** 的 UTF-8 文件，中文规则名与建议会变成乱码再灌进库（实测踩过，见 `docs/错题本.md` D-2）。
+> `cmd /c type` 输出原始字节，与 shell 编码无关。
+>
 > 该脚本按 `rule_code` 幂等 upsert，可重复执行（会把规则改回基线）。
+> **改了规则词表后必须重灌一次**，否则数据库里还是旧词表（词表存在 `review_rules.match_params_json`）。
 
 ### 4. 安装依赖
 
