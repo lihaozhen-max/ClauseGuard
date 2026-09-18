@@ -1,0 +1,46 @@
+# ============================================================================
+# ClauseGuard — MySQL 8（SPEC CF-04 / 设计 §3.3）
+#
+# 用法（在 database/ 目录下执行，凭据来自项目根目录的 .env）：
+#   docker compose --env-file ../.env up -d
+#   docker compose --env-file ../.env ps
+#
+# 首次初始化（数据卷为空）时自动执行 schema.sql 建表、seed_rules.sql 灌入 R001–R011。
+# 需要重建库时：docker compose --env-file ../.env down -v 后再 up。
+# ============================================================================
+name: clauseguard
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: clauseguard-mysql
+    restart: unless-stopped
+    # 字符集/排序规则与 UTC 时区（SPEC §2.3：DT-00-02、DT-00-03）
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_general_ci
+      - --default-time-zone=+00:00
+      - --explicit_defaults_for_timestamp=ON
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?请在 ClauseGuard/.env 中设置 DB_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME:-clauseguard}
+      MYSQL_USER: ${DB_USER:-clauseguard}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?请在 ClauseGuard/.env 中设置 DB_PASSWORD}
+    ports:
+      # 只绑定本机回环，不对外暴露数据库（NF-06）
+      - "127.0.0.1:${DB_PORT:-3306}:3306"
+    volumes:
+      - clauseguard-mysql-data:/var/lib/mysql
+      # 建表脚本（DT-01…DT-08）与规则种子数据（R001–R011），仅在数据卷首次初始化时执行
+      - ./schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./seed_rules.sql:/docker-entrypoint-initdb.d/02_seed_rules.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${DB_ROOT_PASSWORD}"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+volumes:
+  clauseguard-mysql-data:
+    name: clauseguard-mysql-data

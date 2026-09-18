@@ -1,0 +1,67 @@
+# ── 机密：绝不提交 ──────────────────────────────────────
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# ── Python ────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib60/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# ── 测试与工具缓存 ─────────────────────────────────────
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+coverage.xml
+.tox/
+
+# ── 运行时产物：合同原文属敏感数据，不提交 ─────────────
+storage/
+*.log
+
+# ── OCR 模型（体积大，交付包不含）───────────────────────
+storage/ocr_models/
+*.pdmodel
+*.pdiparams
+
+# ── 前端 ──────────────────────────────────────────────
+node_modules/
+frontend-or-client/dist/
+.vite/
+pnpm-lock.yaml.bak
+
+# ── IDE / 系统 ────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# ── 其他 ──────────────────────────────────────────────
+debug.log
+.probe-cache/
+
+# 注意：screenshots/ 必须提交（实战说明要求附测试截图），故不忽略。

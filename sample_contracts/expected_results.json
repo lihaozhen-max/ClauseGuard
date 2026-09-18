@@ -1,0 +1,103 @@
+{
+  "note": "SPEC §15 SD-01：每份样例的期望结果，供 M3 规则引擎回归比对",
+  "samples": {
+    "AP-001": {
+      "approval_code": "CG-2026-0001",
+      "contract_type": "采购合同",
+      "file_name": "AP-001_采购合同.pdf",
+      "parse_mode": "text",
+      "overall_risk_level": "high",
+      "expected_hits": [
+        "R001",
+        "R003",
+        "R005",
+        "R008",
+        "R010",
+        "R011"
+      ],
+      "expected_not_hit": [
+        "R002",
+        "R004",
+        "R006",
+        "R007",
+        "R009"
+      ],
+      "llm_dependent": [
+        "R004",
+        "R009"
+      ],
+      "note": "80% 预付款(hit)、期满自动续约(hit)、验收无标准(hit)、乙方所在地管辖(hit)、缺保密/知识产权条款(hit)；R002 账期 30 天、R006/R007 主体金额齐全 → miss；R004（对等违约）与 R009（无数据处理）由 LLM 判定：LLM 开启时 miss，关闭时 uncertain——两者都不是 hit，故整体等级恒为 high"
+    },
+    "AP-002": {
+      "approval_code": "CG-2026-0002",
+      "contract_type": "服务合同",
+      "file_name": "AP-002_服务合同.pdf",
+      "parse_mode": "text",
+      "overall_risk_level": "low",
+      "expected_hits": [],
+      "expected_not_hit": [
+        "R001",
+        "R002",
+        "R003",
+        "R004",
+        "R005",
+        "R006",
+        "R007",
+        "R008",
+        "R009",
+        "R010",
+        "R011"
+      ],
+      "llm_dependent": [
+        "R004"
+      ],
+      "note": "条款完备，**必须零命中**：30% 预付款(=阈值不命中，RL-00-05 严格大于)、30 天账期、验收三要素齐、甲方所在地管辖、对等违约、保密/数据(四要素齐)/知识产权(归甲方)条款齐备 → R009 亦为 miss；R004 由 LLM 判定，关闭时为 uncertain"
+    },
+    "AP-003": {
+      "approval_code": "CG-2026-0003",
+      "contract_type": "采购合同",
+      "file_name": "AP-003_扫描件.png",
+      "parse_mode": "ocr",
+      "overall_risk_level": "high",
+      "expected_hits": [
+        "R001",
+        "R003",
+        "R004",
+        "R005",
+        "R008",
+        "R010",
+        "R011"
+      ],
+      "expected_not_hit": [
+        "R002",
+        "R006",
+        "R007",
+        "R009"
+      ],
+      "llm_dependent": [
+        "R009"
+      ],
+      "note": "扫描图片必须走 OCR（AC05），关键特征与 AP-001 同类但文面简化；文面未写违约责任条款 → R004① 命中（hit_source=rule）；缺保密/知识产权条款 → R008/R010① 命中；支付账期仅 3 天、主体金额齐全 → R002/R006/R007 miss"
+    },
+    "AP-004": {
+      "approval_code": "CG-2026-0004",
+      "contract_type": "采购合同",
+      "file_name": "AP-004_办公用品采购合同.pdf",
+      "parse_mode": null,
+      "overall_risk_level": null,
+      "expected_hits": [],
+      "expected_miss": [],
+      "note": "附件不存在 → 任务 blocked / blocked_stage=parsing / error_code=CONTRACT_ATTACHMENT_MISSING（AC16）"
+    },
+    "AP-005": {
+      "approval_code": "CG-2026-0005",
+      "contract_type": "框架协议",
+      "file_name": "AP-005_空文件.pdf",
+      "parse_mode": null,
+      "overall_risk_level": null,
+      "expected_hits": [],
+      "expected_miss": [],
+      "note": "0 字节文件 → 下载成功但解析为空 → blocked / EMPTY_CONTRACT_CONTENT（或 PARSE_FAILED）"
+    }
+  }
+}
