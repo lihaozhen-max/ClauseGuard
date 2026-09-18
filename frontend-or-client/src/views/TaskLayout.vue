@@ -12,8 +12,8 @@ import { ArrowLeft, RefreshRight } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 import { describeError } from '../api/client'
-import { getTask, retryTask } from '../api/tasks'
-import type { TaskDetail } from '../api/types'
+import { getApprovalDetail, getTask, retryTask } from '../api/tasks'
+import type { ApprovalDetail, TaskDetail } from '../api/types'
 import { provideTaskContext } from '../composables/taskContext'
 import {
   taskStatusLabel,
@@ -27,6 +27,8 @@ const router = useRouter()
 
 const taskId = computed(() => Number(route.params.taskId))
 const task = ref<TaskDetail | null>(null)
+const approval = ref<ApprovalDetail | null>(null)
+const approvalError = ref('')
 const loading = ref(false)
 const error = ref('')
 
@@ -38,12 +40,21 @@ async function reload(): Promise<void> {
   } catch (cause) {
     error.value = describeError(cause)
     task.value = null
-  } finally {
     loading.value = false
+    return
   }
+  // IF-02 是"表单数据"的权威来源；拿不到不算致命，详情页会回落到本系统缓存
+  approvalError.value = ''
+  try {
+    approval.value = await getApprovalDetail(task.value.instance_id)
+  } catch (cause) {
+    approval.value = null
+    approvalError.value = describeError(cause)
+  }
+  loading.value = false
 }
 
-provideTaskContext({ taskId, task, loading, error, reload })
+provideTaskContext({ taskId, task, approval, approvalError, loading, error, reload })
 
 const activeTab = computed(() => String(route.name ?? 'task-detail'))
 

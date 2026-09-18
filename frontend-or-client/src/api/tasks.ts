@@ -2,6 +2,7 @@
 
 import { request } from './client'
 import type {
+  ApprovalDetail,
   CommentLogList,
   CommentWriteResult,
   LogLevel,
@@ -35,6 +36,16 @@ export function listTasks(params: {
 /** IF-12 任务详情（FR-UI-02）。 */
 export function getTask(taskId: number): Promise<TaskDetail> {
   return request<TaskDetail>(`/api/tasks/${taskId}`)
+}
+
+/**
+ * IF-02 审批详情（审批系统侧的"权威来源"）。
+ *
+ * 待办列表（IF-01）按 PRD 只返回列表级字段，**不含表单数据**；本系统只在"第 ② 步 详情"
+ * 时把表单缓存进任务行。因此详情页对**尚未解析**的任务用这个接口补齐表单数据。
+ */
+export function getApprovalDetail(instanceId: string): Promise<ApprovalDetail> {
+  return request<ApprovalDetail>(`/api/approvals/${encodeURIComponent(instanceId)}`)
 }
 
 /** IF-13 解析结果（FR-UI-03）；未解析时后端返回 409 `PARSE_REQUIRED`。 */

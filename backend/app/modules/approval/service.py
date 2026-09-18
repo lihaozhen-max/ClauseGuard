@@ -213,6 +213,59 @@ async def fetch_approval_detail(
     )
 
 
+async def cache_approval_snapshot(
+    session: AsyncSession,
+    task: ApprovalTask,
+    detail: ApprovalDetail,
+) -> list[str]:
+    """把审批侧的 ``contract_type`` / ``form_data`` 缓存进任务行（PRD §6 第二步）。
+
+    **为什么必须缓存**：待办列表接口（IF-01）按 PRD 只返回列表级字段，不含表单数据；
+    表单数据只在审批详情（IF-02）里。而一步闭环的第 ② 步正是"详情查看"，
+    此时把详情落到 ``approval_tasks`` 才能让 IF-12（任务详情）在不依赖审批系统的前提下
+    给出"审批信息 + 表单 + 附件"（设计 §6.2）。
+
+    :return: 实际发生变化的列名（便于日志；无变化返回空列表）
+    """
+    changed: list[str] = []
+    if detail.contract_type and task.contract_type != detail.contract_type:
+        task.contract_type = detail.contract_type
+        changed.append("contract_type")
+    if detail.form_data and dict(task.form_data_json or {}) != detail.form_data:
+        # 整体替换而非就地改 key：JSON 列的变更检测依赖"绑定了新对象"
+        task.form_data_json = dict(detail.form_data)
+        changed.append("form_data_json")
+    if changed:
+        logger.info(
+            "审批详情已缓存：task_id=%s instance_id=%s 更新列=%s",
+            task.id,
+            task.instance_id,
+            "、".join(changed),
+        )
+    return changed
+
+
+async def sync_approval_snapshot(
+    session: AsyncSession,
+    task: ApprovalTask,
+    client: ApprovalSystemClient | None = None,
+) -> list[str]:
+    """**尽力而为**地同步审批详情快照，失败只记警告、绝不阻断主流程。
+
+    审批系统不可达时，闭环的其余步骤（附件已在本地、规则可跑）不应因此失败——
+    这与"``LLM_FAILED`` 不阻塞任务"（LM-14）是同一个降级思路。
+    已有缓存的表单数据属于"审批侧已读过的信息"，此时不再重复请求。
+    """
+    if task.form_data_json and task.contract_type:
+        return []
+    try:
+        detail = await fetch_approval_detail(session, task.instance_id, client=client)
+    except Exception as exc:  # noqa: BLE001 - 缓存是尽力而为，任何异常都不该改变任务状态
+        logger.warning("审批详情缓存失败（不影响解析）：task_id=%s err=%s", task.id, exc)
+        return []
+    return await cache_approval_snapshot(session, task, detail)
+
+
 async def list_local_tasks(
     session: AsyncSession,
     status: str | None = None,
@@ -245,9 +298,11 @@ async def get_local_task(session: AsyncSession, task_id: int) -> ApprovalTask | 
 
 
 __all__ = [
+    "cache_approval_snapshot",
     "fetch_approval_detail",
     "finalize_pull",
     "get_local_task",
     "list_local_tasks",
+    "sync_approval_snapshot",
     "upsert_pending_approvals",
 ]

@@ -8,12 +8,16 @@
 import type { ComputedRef, InjectionKey, Ref } from 'vue'
 import { inject, provide } from 'vue'
 
-import type { TaskDetail } from '../api/types'
+import type { ApprovalDetail, TaskDetail } from '../api/types'
 
 export interface TaskContext {
   /** 当前任务 id（来自路由参数）。 */
   taskId: ComputedRef<number>
   task: Ref<TaskDetail | null>
+  /** IF-02 审批系统侧详情（表单数据的权威来源）；不可达时为 `null`。 */
+  approval: Ref<ApprovalDetail | null>
+  /** 审批系统不可达时的原因（用于页面提示，不当作致命错误）。 */
+  approvalError: Ref<string>
   loading: Ref<boolean>
   error: Ref<string>
   reload: () => Promise<void>

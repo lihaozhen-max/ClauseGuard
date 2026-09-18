@@ -62,6 +62,31 @@ async def _logs(task_id: int) -> list[TaskLog]:
     return list(rows)
 
 
+def _run_loop(
+    db_runner: Any,
+    approval_client: ApprovalSystemClient,
+    instance_id: str,
+    *,
+    write_comment: bool = False,
+) -> ApprovalTask:
+    """把某份样例推进到目标阶段（每步都幂等），并返回任务行。
+
+    用例因此**不依赖执行顺序**：以前它们默认"别的用例已经解析过 AP-002"，
+    单独挑一条跑（`pytest -k`）就会失败。
+    """
+    task = db_runner(lambda: _task_of(instance_id))
+    assert task is not None, f"{instance_id} 未拉取到，模块级夹具应已处理"
+    db_runner(lambda: parse_task(task.id, client=approval_client))
+    pipeline = db_runner(lambda: run_full_review(task.id, llm=NullLLMClient()))
+    if write_comment:
+        db_runner(
+            lambda: write_approval_comment(
+                task.instance_id, pipeline.saved.review_id, client=approval_client
+            )
+        )
+    return task
+
+
 # ── AC18：8 类核心操作均有日志 ───────────────────────────────────────────
 
 
@@ -96,10 +121,7 @@ def test_text_document_loop_has_seven_types_without_ocr(
     live_db: str, db_runner, approval_client
 ) -> None:
     """文本型合同没有 OCR 环节 → 应为 7 类（这是预期语义，不是缺陷）。"""
-    task = db_runner(lambda: _task_of("AP-001"))
-    assert task is not None
-    db_runner(lambda: parse_task(task.id, client=approval_client))
-    db_runner(lambda: run_full_review(task.id, llm=NullLLMClient()))
+    task = _run_loop(db_runner, approval_client, "AP-001", write_comment=True)
 
     async def kinds() -> set[str]:
         async with session_scope() as session:
@@ -113,10 +135,9 @@ def test_text_document_loop_has_seven_types_without_ocr(
 # ── 日志质量约束（FR-LOG-02/03/04）──────────────────────────────────────
 
 
-def test_every_log_row_has_required_fields(live_db: str, db_runner) -> None:
+def test_every_log_row_has_required_fields(live_db: str, db_runner, approval_client) -> None:
     """FR-LOG-02：每条日志必须含 task_id / log_level / log_type / log_content / created_at。"""
-    task = db_runner(lambda: _task_of("AP-002"))
-    assert task is not None
+    task = _run_loop(db_runner, approval_client, "AP-002")
     rows = db_runner(lambda: _logs(task.id))
     assert rows
     for row in rows:
@@ -127,11 +148,10 @@ def test_every_log_row_has_required_fields(live_db: str, db_runner) -> None:
         assert row.created_at is not None
 
 
-def test_log_content_is_truncated_and_redacted(live_db: str, db_runner) -> None:
+def test_log_content_is_truncated_and_redacted(live_db: str, db_runner, approval_client) -> None:
     """FR-LOG-04 截断 ≤500 字符；FR-LOG-03 不得出现任何密钥。"""
     settings = get_settings()
-    task = db_runner(lambda: _task_of("AP-002"))
-    assert task is not None
+    task = _run_loop(db_runner, approval_client, "AP-002")
     rows = db_runner(lambda: _logs(task.id))
     assert rows
     for row in rows:
@@ -140,9 +160,10 @@ def test_log_content_is_truncated_and_redacted(live_db: str, db_runner) -> None:
             assert secret not in row.log_content
 
 
-def test_log_query_supports_filters_and_pagination(live_db: str, db_runner) -> None:
-    task = db_runner(lambda: _task_of("AP-002"))
-    assert task is not None
+def test_log_query_supports_filters_and_pagination(
+    live_db: str, db_runner, approval_client
+) -> None:
+    task = _run_loop(db_runner, approval_client, "AP-002")
 
     async def query() -> tuple[int, int, int]:
         async with session_scope() as session:

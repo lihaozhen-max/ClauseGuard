@@ -21,6 +21,9 @@
 | `docs/M4-验收记录.md` | CG-M4-001 | M4 摘要/关注点 + 结果入库 + 评论回写的验证证据与决策记录 |
 | `docs/M5-验收记录.md` | CG-M5-001 | M5 异常阻塞 + 人工重试 + 全链路日志的验证证据与决策记录 |
 | `docs/M6-验收记录.md` | CG-M6-001 | M6 前端五模块 + 规则维护 + 日志页的验证证据与决策记录 |
+| `docs/M7-验收记录.md` | CG-M7-001 | M7 闭环演示 + 测试 + 截图 + 交付整理的验证证据与决策记录 |
+| `docs/演示说明.md` | CG-DEMO-001 | 现场演示 Runbook（起服务、按标签讲、常见提问） |
+| `docs/验收对照表.md` | CG-AC-001 | AC01–AC19 / TS-01–TS-20 → 用例与截图的证据索引 |
 
 文档冲突时的裁决顺序：用户指令 → PRD → SPEC → 设计文档 → 通用工程习惯（SPEC §0.2）。
 
@@ -47,7 +50,8 @@ ClauseGuard/
 ├── frontend-or-client/      调用端 Vue 3（M6）
 ├── database/                docker-compose.yml（MySQL 8）+ schema.sql（DT-01…DT-08）
 ├── sample_contracts/        自造样例合同（M1/M2）
-├── docs/                    SPEC / 设计 / 架构图 / 里程碑记录
+├── scripts/                 闭环演示脚本（M7）
+├── docs/                    SPEC / 设计 / 架构图 / 接口说明 / 里程碑记录 / 演示说明 / 验收对照表
 ├── tests/                   单元 + 集成用例
 ├── screenshots/             验收截图（必须提交）
 ├── README.md
@@ -157,6 +161,17 @@ npm run typecheck   # vue-tsc --noEmit
 npm run build       # 产出 dist/
 ```
 
+### 9. 一键闭环演示（可选，用于验收/答辩）
+
+```powershell
+cd ClauseGuard
+uv run --project backend python scripts/demo_closed_loop.py --reset --all
+```
+
+脚本对着**真实运行的服务**把九步闭环（AP-001）与"附件缺失 → 补齐 → 人工重试"（AP-004）
+各跑一遍，逐条打印判据实测值并给出 `演示结果：N/N 项判据通过`。
+现场演示的完整脚本见 `docs/演示说明.md`，逐条 AC 的证据索引见 `docs/验收对照表.md`。
+
 ## 端口约定
 
 | 端口 | 服务 |
@@ -184,7 +199,7 @@ npm run build       # 产出 dist/
 | **M4** | 摘要/关注点 + 结果入库 + 评论生成与回写 | ✅ **已完成**（`docs/M4-验收记录.md`，AC11–AC15） |
 | **M5** | `blocked` 状态 + 人工重试 + 全链路日志 | ✅ **已完成**（`docs/M5-验收记录.md`，AC16–AC18） |
 | **M6** | 前端五个模块 + 规则维护（IF-21）+ 日志页 | ✅ **已完成**（`docs/M6-验收记录.md`，FR-UI-01…08、NF-10） |
-| M7 | 闭环演示 + 截图 + 文档与交付整理 | ⏳ |
+| **M7** | 闭环演示 + 测试 + 截图 + 文档与交付整理 | ✅ **已完成**（`docs/M7-验收记录.md`，AC19 及全部） |
 
 ## 样例数据
 

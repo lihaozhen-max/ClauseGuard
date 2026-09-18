@@ -18,7 +18,7 @@ from app.core.enums import LogType
 from app.core.errors import AppError, ErrorCode
 from app.db.models import ApprovalAttachment, ApprovalTask, ContractParse
 from app.db.session import session_scope
-from app.modules.approval.service import fetch_approval_detail
+from app.modules.approval.service import fetch_approval_detail, sync_approval_snapshot
 from app.modules.approval.state import BLOCKED_STAGE_PARSING, fail_and_block
 from app.modules.attachment.service import download_attachment, list_task_attachments
 from app.modules.parser.service import ParseOutcome, parse_attachment
@@ -113,6 +113,9 @@ async def parse_task(
                 detail={"task_id": task_id},
             )
         try:
+            # 第 ② 步「详情」：把审批侧的表单数据缓存进任务行（PRD §6 第二步）。
+            # 尽力而为——审批系统不可达时只记警告，不改变任务状态（同 LM-14 的降级思路）。
+            await sync_approval_snapshot(session, task, client=client)
             attachments = await ensure_attachments(session, task, client=client)
             if not attachments:
                 raise AppError(

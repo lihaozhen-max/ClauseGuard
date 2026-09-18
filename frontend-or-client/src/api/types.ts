@@ -91,6 +91,28 @@ export interface LocalAttachment {
   download_status: DownloadStatus
 }
 
+/** IF-02 的返回：审批系统侧详情（含表单数据，是"表单数据"的权威来源）。 */
+export interface ApprovalAttachmentInfo {
+  attachment_id: string
+  file_name: string
+  file_type: string
+  file_size: number | null
+}
+
+export interface ApprovalDetail {
+  instance_id: string
+  approval_code: string
+  approval_title: string
+  applicant_name: string
+  apply_time: string | null
+  current_status: string | null
+  contract_type: string | null
+  form_data: Record<string, unknown>
+  attachments: ApprovalAttachmentInfo[]
+  task_id: number | null
+  task_status: TaskStatus | null
+}
+
 export interface TaskDetail {
   task_id: number
   instance_id: string
