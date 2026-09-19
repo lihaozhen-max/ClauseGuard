@@ -143,27 +143,53 @@ if ($current -and $current.Content -like '*ClauseGuard*') {
 # ── 4) 调用端（前端）───────────────────────────────────────────────────────
 if (-not $NoFrontend) {
     Write-Step "调用端 / 前端（端口 $webPort）"
-    if (Get-Health "http://127.0.0.1:$webPort/") {
-        Write-Ok "已在运行"
+
+    # 只看"状态码 200"是不够的：别的项目（同一个 5173）也会返回 200。
+    # 必须**校验身份** —— 让页面自己说它是谁。实测踩过：本机另一个项目 InsightTrace 的
+    # 前端占了 5173，被误判成"本项目已在运行"，于是我们的前端从来没起来。
+    $ownWeb = $false
+    if (Test-Listening $webPort) {
+        try {
+            $html = (Invoke-WebRequest -Uri "http://127.0.0.1:$webPort/" -UseBasicParsing -TimeoutSec 3).Content
+            $ownWeb = $html -like '*ClauseGuard*'
+        } catch { $ownWeb = $false }
+    }
+
+    if ($ownWeb) {
+        Write-Ok "已在运行（页面身份校验通过）"
     } else {
-        $webRoot = Join-Path $root 'frontend-or-client'
-        if (-not (Test-Path (Join-Path $webRoot 'node_modules'))) {
-            Write-Warn "node_modules 不存在，先执行 npm install（首次约 1–2 分钟，请稍等）"
-            Push-Location $webRoot
-            try { & cmd.exe /c 'npm install' | Out-Null } finally { Pop-Location }
+        if (Test-Listening $webPort) {
+            Write-Warn "端口 $webPort 已被**别的服务**占用（不是本项目的前端）"
+            $free = 5174..5180 | Where-Object { -not (Test-Listening $_) } | Select-Object -First 1
+            if (-not $free) {
+                Write-Bad "5174–5180 也没有空闲端口，跳过前端启动"
+                $webPort = $null
+            } else {
+                Write-Warn "本项目前端改用端口 $free（要回到 $webPort，请先停掉占用它的服务）"
+                $webPort = $free
+            }
         }
-        $webPid = Start-Detached $webRoot 'npm run dev' (Join-Path $logDir 'web.log')
-        if (Wait-Health '调用端' "http://127.0.0.1:$webPort/" $null 120 (Join-Path $logDir 'web.log')) {
-            Write-Ok "已启动（pid $webPid）：http://127.0.0.1:$webPort"
-        } else {
-            Write-Bad "启动失败，见 _logs/web.log"
+
+        if ($webPort) {
+            $webRoot = Join-Path $root 'frontend-or-client'
+            if (-not (Test-Path (Join-Path $webRoot 'node_modules'))) {
+                Write-Warn "node_modules 不存在，先执行 npm install（首次约 1–2 分钟，请稍等）"
+                Push-Location $webRoot
+                try { & cmd.exe /c 'npm install' | Out-Null } finally { Pop-Location }
+            }
+            $webPid = Start-Detached $webRoot "npm run dev -- --port $webPort" (Join-Path $logDir 'web.log')
+            if (Wait-Health '调用端' "http://127.0.0.1:$webPort/" $null 120 (Join-Path $logDir 'web.log')) {
+                Write-Ok "已启动（pid $webPid）：http://127.0.0.1:$webPort"
+            } else {
+                Write-Bad "启动失败，见 _logs/web.log"
+            }
         }
     }
 }
 
 Write-Host ''
 Write-Host '----------------------------------------------------------' -ForegroundColor DarkGray
-Write-Host ' 调用端      http://127.0.0.1:5173' -ForegroundColor White
+Write-Host " 调用端      http://127.0.0.1:$webPort" -ForegroundColor White
 Write-Host ' 工具服务    http://127.0.0.1:8000/health' -ForegroundColor White
 Write-Host ' 审批模拟    http://127.0.0.1:8100/health' -ForegroundColor White
 Write-Host ' 停止全部    powershell -File scripts/dev_down.ps1' -ForegroundColor DarkGray

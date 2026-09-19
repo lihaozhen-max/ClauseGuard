@@ -174,6 +174,13 @@ npm run dev
 因此**不需要**给后端加 CORS。若不想把密钥写进文件，也可以留空配置，
 在页面右上角「接口密钥」对话框里临时填写（存在浏览器 localStorage，换后端无需重新构建）。
 
+> ⚠️ **5173 被别的项目占用时会自动顺延**：`scripts/dev_up.ps1` 会先**校验页面身份**
+> （只看"状态码 200"会把别人的前端误认成我们的 —— 实测踩过：本机另一个项目占用 5173，
+> 导致我们的前端一直没起来），确认不是本项目就改用 5174/5175…，结束时打印真实地址；
+> `scripts/dev_status.ps1` 也会把真实端口列出来。
+> 手工 `npm run dev` 时若 5173 被占，因 `strictPort` 会直接报错退出，用
+> `npm run dev -- --port 5174` 即可。
+
 ```powershell
 npm run typecheck   # vue-tsc --noEmit
 npm run build       # 产出 dist/
