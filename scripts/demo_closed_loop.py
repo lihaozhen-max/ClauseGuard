@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import shutil
 import sys
 from pathlib import Path
@@ -36,6 +37,23 @@ CORE_LOG_TYPES = ("pull", "download", "parse", "ocr", "extract", "rule", "save",
 
 PASS = "[OK]"
 FAIL = "[!!]"
+
+
+def load_expected(instance_id: str) -> dict:
+    """读取 SPEC §15 SD-01 的期望结果（``sample_contracts/expected_results.json``）。
+
+    这是"这份样例应该得出什么"的**单一事实来源**，演示脚本据此比对，而不是把 AP-001 的
+    期望值写死在代码里 —— 否则换一个 ``--instance``（例如条款齐备的 AP-007，期望 low / 0 命中）
+    就会被误判成"未通过"。
+    读取失败或该样例无期望值时返回空字典：此时只做通用判据，不比对具体等级。
+    """
+    path = SAMPLES / "expected_results.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    entry = (data.get("samples") or {}).get(instance_id)
+    return entry if isinstance(entry, dict) else {}
 
 
 class Demo:
@@ -118,6 +136,10 @@ class Demo:
         print(f"AC19 端到端闭环演示：{instance_id}（全程无人工干预）")
         print("=" * 78)
 
+        # 期望值来自 expected_results.json（单一事实来源），不在代码里写死某个样例的结论
+        expected = load_expected(instance_id)
+        expected_risk = expected.get("overall_risk_level")
+
         self.step("①", "拉取待办（IF-10）")
         pulled = self.pull(5)
         self.check(len(pulled["items"]) >= 1, f"拉到 {len(pulled['items'])} 条待办")
@@ -133,11 +155,17 @@ class Demo:
 
         self.step("②", "查看审批详情（IF-12 + IF-02）")
         detail = self.client.get(f"/api/tasks/{task_id}").json()
-        declared = self.approval_detail(instance_id)["attachments"]
-        # 此刻还没下载，本系统附件表自然为空；"有几个附件"由审批系统（IF-02）给出
+        approval = self.approval_detail(instance_id)
+        declared = approval["attachments"]
+        # 本系统**不预下载**附件（PRD §6：下载发生在解析阶段），所以解析前附件表应为空。
+        # 脚本要可重复演示，因此"已经跑过一遍"也算通过：此时附件条数应与声明一致。
+        downloaded = len(detail["attachments"])
+        first_run = downloaded == 0
         self.check(
-            len(declared) >= 1 and detail["attachments"] == [],
-            f"审批单声明附件 {len(declared)} 个（{declared[0]['file_name']}），本系统尚未下载",
+            len(declared) >= 1 and (first_run or downloaded == len(declared)),
+            f"审批单声明附件 {len(declared)} 个（{declared[0]['file_name']}），"
+            f"本系统当前 {downloaded} 个"
+            + ("（首次：尚未下载，符合预期）" if first_run else "（重跑：已下载）"),
         )
 
         self.step("③④⑤", "下载附件 + 解析 + 16 字段提取（IF-14）")
@@ -149,16 +177,27 @@ class Demo:
         self.check(
             parse_body["parse_status"] == "success", f"parse_status={parse_body['parse_status']}"
         )
-        self.check(parse_body["parse_mode"] == "text", f"parse_mode={parse_body['parse_mode']}")
+        # 解析模式由附件类型决定：图片/扫描件 → ocr，其余 → text。
+        # 若 expected_results.json 里有该样例的期望值则以其为准（单一事实来源）。
+        scan_suffixes = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff"}
+        expected_mode = expected.get("parse_mode") or (
+            "ocr" if Path(declared[0]["file_name"]).suffix.lower() in scan_suffixes else "text"
+        )
+        self.check(
+            parse_body["parse_mode"] == expected_mode,
+            f"parse_mode={parse_body['parse_mode']}"
+            f"（按附件 {declared[0]['file_name']} 预期 {expected_mode}）",
+        )
         total_fields = len(parse_body["basic_info"]) + len(parse_body["clause_info"])
         self.check(total_fields == 16, f"字段记录 {total_fields} 条（基本信息 8 + 条款 8）")
 
         # 第 ② 步会缓存审批表单数据（PRD §6 第二步），因此详情要在解析之后再取一次
         detail = self.client.get(f"/api/tasks/{task_id}").json()
+        # 合同类型以**审批系统声明的值**为准（IF-02），不写死 —— 换 `--instance` 才不会假失败
         self.check(
-            bool(detail["form_data"]) and detail["contract_type"] == "采购合同",
-            f"审批表单已缓存：contract_type={detail['contract_type']}，"
-            f"form_data={len(detail['form_data'])} 项",
+            bool(detail["form_data"]) and detail["contract_type"] == approval["contract_type"],
+            f"审批表单已缓存：contract_type={detail['contract_type']}"
+            f"（= 审批系统声明值），form_data={len(detail['form_data'])} 项",
         )
         attachment = detail["attachments"][0]
         self.check(
@@ -178,9 +217,10 @@ class Demo:
         review = reviewed.json()
         self.check(len(review["rule_hits"]) == 11, "11 条规则全部给出判定")
         self.check(
-            review["overall_risk_level"] == "high",
+            expected_risk is None or review["overall_risk_level"] == expected_risk,
             f"整体风险={review['overall_risk_level']}（命中 {review['hit_count']}，"
-            f"待确认 {review['uncertain_count']}）",
+            f"待确认 {review['uncertain_count']}）"
+            + (f"，与 expected_results.json 的 {expected_risk} 一致" if expected_risk else ""),
         )
         hits = [h for h in review["rule_hits"] if h["hit_status"] == "hit"]
         self.check(
@@ -188,9 +228,14 @@ class Demo:
             "命中项均含风险等级 + 证据 + 位置 + 建议：" + "、".join(h["rule_code"] for h in hits),
         )
         self.check(bool(review["summary_text"].strip()), f"摘要 {len(review['summary_text'])} 字")
+        # 关注点由**命中项**派生（summarizer.active_hits）：有命中 → 1–5 条；零命中 → 0 条。
+        # 原先写死 "1–5 条"，于是条款齐备的对照组（AP-007，期望 0 命中）被误判为不通过。
+        focus_count = len(review["focus_points"])
         self.check(
-            1 <= len(review["focus_points"]) <= 5,
-            f"关注点 {len(review['focus_points'])} 条（1–5 条）",
+            focus_count <= 5 and (focus_count >= 1) == bool(hits),
+            f"关注点 {focus_count} 条（命中 {len(hits)} 条 → "
+            + ("应有 1–5 条" if hits else "零命中时为 0 条")
+            + "）",
         )
 
         self.step("⑧", "结果入库（IF-06 → DT-06 唯一）")
