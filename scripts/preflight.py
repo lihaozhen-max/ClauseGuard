@@ -13,7 +13,8 @@
 
 - **只读**：不改任何配置、不建表、不写库；
 - **不打印密钥**：只报告"是否已配置"与长度，绝不回显值（NF-06）；
-- 不引入新依赖：读 ``.env`` 用十行解析器，端口用 ``socket``，数据库用项目已有的 ``pymysql``；
+- 不引入新依赖：读 ``.env`` 用十行解析器，端口用 ``socket``，调用端身份用标准库 ``urllib``，数据库用项目已有的 ``pymysql``；
+- **端口 ≠ 身份**：5173 上跑的可能是别的项目，因此额外按页面内容确认调用端归属（见 docs/错题本.md D-4）；
 - 必需项（❌）与提醒项（⚠️）分开：后者不影响启动（例如没装 Chrome 只是跑不了浏览器用例）。
 """
 
@@ -74,6 +75,14 @@ EXPECTED_SAMPLES = (
     "expected_results.json",
 )
 MISSING_BY_DESIGN = "AP-004_办公用品采购合同.pdf"
+#: 自查用样例（AP-006…AP-009 的附件，覆盖 Word / PDF，见 sample_contracts/extra/README.md）
+EXPECTED_EXTRA_SAMPLES = (
+    "T-01_设备租赁合同.pdf",
+    "T-02_技术服务合同.pdf",
+    "T-03_数据处理服务协议.docx",
+    "T-04_框架采购协议.pdf",
+)
+EXTRA_SAMPLES_DIR = SAMPLES / "extra"
 
 
 @dataclass
@@ -158,6 +167,37 @@ def port_state(port: int) -> str:
 def mask(value: str) -> str:
     """只报告长度，绝不回显密钥（NF-06）。"""
     return f"已配置（{len(value)} 字符）" if value else "空"
+
+
+def locate_frontend() -> tuple[str | None, str]:
+    """在 5173–5180 上按**页面身份**定位本项目调用端。
+
+    返回 ``(url, 说明)``；找不到时 url 为 ``None``。
+
+    为什么不能只看"端口返回 200"：本机可能同时跑着别的项目（实测踩过 —— 另一个项目的
+    dev server 占着 5173 并把自己的 ``/api`` 代理到自己的后端），那样"200"会把别人的前端
+    认成本项目的，于是测试和探活全都指错对象。判据必须包含身份证据（页面含 ``ClauseGuard``）。
+    只用标准库，不引入新依赖。
+    """
+    from urllib.error import URLError
+    from urllib.request import urlopen
+
+    occupied: list[str] = []
+    for port in range(5173, 5181):
+        try:
+            with urlopen(f"http://127.0.0.1:{port}/", timeout=1.5) as resp:  # noqa: S310
+                if resp.status != 200:
+                    continue
+                body = resp.read(20000).decode("utf-8", errors="replace")
+        except (URLError, OSError, ValueError):
+            continue
+        if "ClauseGuard" in body:
+            return f"http://127.0.0.1:{port}", "按页面身份确认"
+        occupied.append(str(port))
+
+    if occupied:
+        return None, f"端口 {'/'.join(occupied)} 上有服务但不是本项目调用端（页面不含 ClauseGuard）"
+    return None, "未在 5173–5180 上发现本项目调用端（尚未启动，或用了别的端口）"
 
 
 # ── 检查项 ─────────────────────────────────────────────────────────────────
@@ -268,11 +308,24 @@ def check_config(report: Report) -> dict[str, str]:
 
 def check_assets(report: Report) -> None:
     missing = [name for name in EXPECTED_SAMPLES if not (SAMPLES / name).is_file()]
+    total_base = len(EXPECTED_SAMPLES) - 1  # expected_results.json 不是合同
     report.add(
         "样例合同与期望结果",
         not missing,
-        "5 份样例齐备" if not missing else f"缺少：{'、'.join(missing)}",
+        f"{total_base} 份规格样例齐备（AP-001…AP-005）"
+        if not missing
+        else f"缺少：{'、'.join(missing)}",
         fix="uv run --project backend python sample_contracts/generate_samples.py",
+    )
+    missing_extra = [n for n in EXPECTED_EXTRA_SAMPLES if not (EXTRA_SAMPLES_DIR / n).is_file()]
+    report.add(
+        "自查样例（AP-006…AP-009）",
+        not missing_extra,
+        f"{len(EXPECTED_EXTRA_SAMPLES)} 份齐备"
+        if not missing_extra
+        else f"缺少：{'、'.join(missing_extra)}",
+        fix="uv run --project backend python sample_contracts/extra/generate_extra.py",
+        required=False,
     )
     report.add(
         "AP-004 附件缺失（AC16 的前提）",
@@ -303,6 +356,17 @@ def check_ports(report: Report, env: dict[str, str]) -> None:
             f"{port}：{'已被占用（可能是服务已在运行）' if state == 'listening' else '空闲'}",
             required=required,
         )
+
+    # 只看"端口被占用"是不够的：5173 上很可能是**别人的前端**（本项目在占用时会顺延到 5174…）。
+    # 这里按页面身份确认一次，避免"以为前端在跑，其实跑的是另一个项目"。
+    web_url, note = locate_frontend()
+    report.add(
+        "本项目调用端身份",
+        web_url is not None,
+        f"{web_url}（{note}）" if web_url else note,
+        fix="powershell -ExecutionPolicy Bypass -File scripts/dev_up.ps1（占用时会自动顺延端口）",
+        required=False,
+    )
 
     db_host = env.get("DB_HOST", "127.0.0.1")
     db_port = int(env.get("DB_PORT", "3306") or 3306)

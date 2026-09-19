@@ -3,7 +3,10 @@
 前置条件（缺一即 ``skip``，不会伪造通过）：
 
 1. 工具服务在 ``127.0.0.1:8000``；
-2. 调用端 dev server 在 ``127.0.0.1:5173``（``cd frontend-or-client; npm run dev``）；
+2. 调用端 dev server 在 ``127.0.0.1:5173``…``5180`` 之一（``cd frontend-or-client; npm run dev``）。
+   Vite 默认端口是 5173，但**可能被本机其他项目占用**（``scripts/dev_up.ps1`` 占用时自动顺延），
+   因此这里不写死端口，而是按**页面身份**（HTML 含 ``ClauseGuard``）在 5173–5180 上定位；
+   也可用环境变量 ``CLAUSEGUARD_WEB_URL`` 直接指定；
 3. 本机有 Chrome / Edge。
 
 跑法::
@@ -11,6 +14,7 @@
     cd backend
     uv run pytest -q -m ui            # 只跑浏览器用例
     uv run pytest -q -m "not ui"      # 跳过浏览器用例（默认全量会带上它）
+    $env:CLAUSEGUARD_WEB_URL = "http://127.0.0.1:5174"   # 需要时手工指定
 
 覆盖 FR-UI-01…FR-UI-08：待办拉取、详情（含 IF-02 表单）、解析、规则命中、结果与回写、
 任务日志、`blocked` 重试入口、规则维护启停。
@@ -18,6 +22,7 @@
 
 from __future__ import annotations
 
+import os
 import time
 from typing import Any, Iterator
 
@@ -32,7 +37,43 @@ from _cdp_client import Chrome, find_browser
 pytestmark = [pytest.mark.requires_db, pytest.mark.ui]
 
 SERVICE_URL = "http://127.0.0.1:8000"
-WEB_URL = "http://127.0.0.1:5173"
+
+#: 调用端候选端口。5173 是 Vite 默认值，但本机可能被其他项目占用，故顺延探测。
+WEB_CANDIDATE_PORTS = (5173, 5174, 5175, 5176, 5177, 5178, 5179, 5180)
+
+
+def _resolve_web_url() -> tuple[str, str]:
+    """按**页面身份**定位本项目调用端，返回 ``(url, 说明)``；定位不到返回 ``("", 原因)``。
+
+    只探"端口返回 200"是不够的：本机其他项目（如 InsightTrace）的 dev server 同样会返回 200，
+    却把 ``/api`` 代理到它自己的后端 —— 那样浏览器用例会去**驱动别人的界面**，
+    失败信息还指向本项目的代码。多一层 ``ClauseGuard`` 字样校验，才能保证测的是本项目。
+    """
+    override = os.environ.get("CLAUSEGUARD_WEB_URL", "").strip().rstrip("/")
+    if override:
+        return override, "端口来自环境变量 CLAUSEGUARD_WEB_URL"
+
+    occupied: list[str] = []
+    for port in WEB_CANDIDATE_PORTS:
+        url = f"http://127.0.0.1:{port}"
+        try:
+            response = httpx.get(f"{url}/", timeout=2.0)
+        except Exception:  # noqa: BLE001 —— 端口没人听就试下一个
+            continue
+        if response.status_code != 200:
+            continue
+        if "ClauseGuard" in response.text:
+            return url, f"按页面身份在端口 {port} 上确认"
+        occupied.append(str(port))
+
+    if occupied:
+        return "", (
+            f"端口 {'/'.join(occupied)} 上有服务但不是本项目调用端（页面不含 ClauseGuard）"
+        )
+    return "", "未在 5173–5180 上发现本项目调用端（cd frontend-or-client; npm run dev）"
+
+
+WEB_URL, _WEB_URL_REASON = _resolve_web_url()
 
 
 def _service_ready() -> tuple[bool, str]:
@@ -46,12 +87,16 @@ def _service_ready() -> tuple[bool, str]:
 
 
 def _web_ready() -> tuple[bool, str]:
+    if not WEB_URL:
+        return False, _WEB_URL_REASON
     try:
         response = httpx.get(f"{WEB_URL}/", timeout=3.0)
     except Exception as exc:  # noqa: BLE001
-        return False, f"调用端 dev server 不可达（npm run dev）：{exc}"
+        return False, f"调用端 dev server 不可达（{WEB_URL}）：{exc}"
     if response.status_code != 200:
-        return False, f"调用端返回 HTTP {response.status_code}"
+        return False, f"调用端返回 HTTP {response.status_code}（{WEB_URL}）"
+    if "ClauseGuard" not in response.text:
+        return False, f"{WEB_URL} 上的页面不是本项目调用端（页面不含 ClauseGuard）"
     return True, "ok"
 
 
